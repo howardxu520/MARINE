@@ -88,7 +88,7 @@ def incorporate_replaced_pos_info(aligned_seq, positions_replaced):
             bases_at_pos.append(a.upper())
         else:
             indicated_aligned_seq.append(others_function(a))
-    return indicated_aligned_seq, bases_at_pos
+    return ''.join(indicated_aligned_seq), bases_at_pos
 
 
 def get_contig_lengths_dict(bam_handle):
@@ -115,3 +115,38 @@ def get_contig_lengths_dict(bam_handle):
                 found_sn = False
                 
     return contig_lengths
+
+def get_hamming_distance(str1, str2):
+    assert(len(str1) == len(str2))
+    distance = 0
+    for i, v1 in enumerate(str1):
+        v2 = str2[i]
+        if v1 != v2:
+            distance += 1
+    return distance
+
+def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, hamming_check=False):    
+    fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
+    positions_replaced = get_positions_from_md_tag(md_tag)
+    indicated_aligned_seq, alt_bases = incorporate_replaced_pos_info(fixed_aligned_seq, positions_replaced)
+    indicated_reference_seq, ref_bases = incorporate_replaced_pos_info(reference_seq, positions_replaced)
+    
+    if hamming_check:
+        hamming_distance = get_hamming_distance(indicated_aligned_seq, indicated_reference_seq)
+        print("Hamming distance: {}".format(hamming_distance))
+        assert(hamming_distance == len(alt_bases))
+        
+    return alt_bases, ref_bases, positions_replaced
+    
+def get_edit_information_wrapper(read, hamming_check=False):
+    md_tag = read.get_tag('MD')
+    cigar_tuples = read.cigartuples
+    aligned_seq = reverse_complement(read.get_forward_sequence())
+    reference_seq = read.get_reference_sequence().lower()
+    return(get_edit_information(md_tag,
+                                cigar_tuples, 
+                                aligned_seq, 
+                                reference_seq, 
+                                hamming_check=hamming_check))
+    
+    
