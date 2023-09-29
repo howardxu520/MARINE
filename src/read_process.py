@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from collections import defaultdict
 
 complements = {
     'A': 'T',
@@ -199,7 +200,8 @@ def get_dataframe_from_barcode_dict(barcode_to_position_to_alts):
 def get_total_coverage_for_contig_at_position(r, coverage_dict):
     position = r.position
     contig = r.contig
-    return coverage_dict.get(contig)[position]
+    barcode = r.barcode
+    return coverage_dict.get(contig).get(barcode)[position]
 
 
 def print_read_info(read):
@@ -211,10 +213,20 @@ def print_read_info(read):
     print("CIGAR tag", cigar_string)
     print('barcode', barcode)
     
+
+def update_coverage_array(read, contig, contig_length, barcode_to_coverage_dict):
+    # Check if we already are tracking coverage for this cell, and if not set up a new array
+    barcode = read.get_tag('CR')
+    position_coverage_tracker_for_contig = barcode_to_coverage_dict.get(barcode, [])
+    if len(position_coverage_tracker_for_contig) == 0: 
+        position_coverage_tracker_for_contig = np.zeros(contig_length)
     
-def update_coverage_array(read, position_coverage_tracker_for_contig):
     reference_positions_covered_by_read = read.get_reference_positions()
     position_coverage_tracker_for_contig[reference_positions_covered_by_read] += 1
+    
+    barcode_to_coverage_dict[barcode] = position_coverage_tracker_for_contig
+    
+    return reference_positions_covered_by_read
     
     
 def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_alts):
@@ -226,15 +238,15 @@ def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_al
         
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
-        return 'no_edits'
+        return 'no_edits', {}
         
     if '^' in read.get_tag('MD'):
         if '^' in read.get_tag('MD'):
             # FOR NOW SKIP DELETIONS, THEY ARE TRICKY TO PARSE...
-            return 'deletion'
+            return 'deletion', {}
     
     if read.is_secondary:
-        return 'secondary'
+        return 'secondary', {}
         
     # PROCESS READ TO EXTRACT EDIT INFORMATION
     strand = '+'
@@ -242,7 +254,9 @@ def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_al
         strand = '-'
             
     alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse)
-
+    
+    num_edits_of_each_type = defaultdict(lambda:0)
+    
     for alt, ref, qual, pos in zip(alt_bases, ref_bases, qualities, positions_replaced):
         assert(alt != ref)
         updated_position = pos+reference_start
@@ -256,3 +270,7 @@ def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_al
 
         barcode_to_position_to_alts[read_barcode][contig]['{}_{}'.format(updated_position, ref)]\
         [alt][read_id] = values_to_store
+        
+        num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
+        
+    return None, num_edits_of_each_type
