@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 complements = {
     'A': 'T',
@@ -125,6 +126,7 @@ def get_contig_lengths_dict(bam_handle):
                 
     return contig_lengths
 
+
 def get_hamming_distance(str1, str2):
     assert(len(str1) == len(str2))
     distance = 0
@@ -133,6 +135,7 @@ def get_hamming_distance(str1, str2):
         if v1 != v2:
             distance += 1
     return distance
+
 
 def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query_qualities, hamming_check=False):    
     fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
@@ -148,6 +151,7 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
         assert(hamming_distance == len(alt_bases))
         
     return alt_bases, ref_bases, qualities, positions_replaced
+    
     
 def get_edit_information_wrapper(read, reverse, hamming_check=False):
     md_tag = read.get_tag('MD')
@@ -165,6 +169,7 @@ def get_edit_information_wrapper(read, reverse, hamming_check=False):
                                 reference_seq,
                                 query_qualities,
                                 hamming_check=hamming_check))
+    
     
 def has_edits(read):
     # Are there any replacements?
@@ -189,3 +194,65 @@ def get_dataframe_from_barcode_dict(barcode_to_position_to_alts):
     example_dataframe['position'] = [int(c.split('_')[0]) for c in example_dataframe['position_ref']]
 
     return example_dataframe
+
+
+def get_total_coverage_for_contig_at_position(r, coverage_dict):
+    position = r.position
+    contig = r.contig
+    return coverage_dict.get(contig)[position]
+
+
+def print_read_info(read):
+    md_tag = read.get_tag('MD')
+    read_id = read.query_name
+    cigar_string = read.cigarstring
+    barcode = read.get_tag('CR')
+    print('MD tag', md_tag)
+    print("CIGAR tag", cigar_string)
+    print('barcode', barcode)
+    
+    
+def update_coverage_array(read, position_coverage_tracker_for_contig):
+    reference_positions_covered_by_read = read.get_reference_positions()
+    position_coverage_tracker_for_contig[reference_positions_covered_by_read] += 1
+    
+    
+def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_alts):
+    read_barcode = read.get_tag('CR')
+    is_reverse = read.is_reverse
+    reference_start = read.reference_start
+    reference_end = read.reference_end
+    read_id = read.query_name
+        
+    # ERROR CHECKS, WITH RETURN CODE SPECIFIED
+    if not has_edits(read):
+        return 'no_edits'
+        
+    if '^' in read.get_tag('MD'):
+        if '^' in read.get_tag('MD'):
+            # FOR NOW SKIP DELETIONS, THEY ARE TRICKY TO PARSE...
+            return 'deletion'
+    
+    if read.is_secondary:
+        return 'secondary'
+        
+    # PROCESS READ TO EXTRACT EDIT INFORMATION
+    strand = '+'
+    if is_reverse:
+        strand = '-'
+            
+    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse)
+
+    for alt, ref, qual, pos in zip(alt_bases, ref_bases, qualities, positions_replaced):
+        assert(alt != ref)
+        updated_position = pos+reference_start
+        if is_reverse:
+            alt = reverse_complement(alt)
+            ref = reverse_complement(ref)
+
+        distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
+
+        values_to_store = strand, distance_from_read_end, qual
+
+        barcode_to_position_to_alts[read_barcode][contig]['{}_{}'.format(updated_position, ref)]\
+        [alt][read_id] = values_to_store
