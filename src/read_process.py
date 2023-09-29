@@ -1,3 +1,4 @@
+import pandas as pd
 
 complements = {
     'A': 'T',
@@ -69,23 +70,31 @@ def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples):
     return new_seq
 
 
-def incorporate_replaced_pos_info(aligned_seq, positions_replaced):
+def incorporate_replaced_pos_info(aligned_seq, positions_replaced, qualities=False):
     """
     Return the aligned sequence string, with specified positions indicated as upper case
     and others as lower case. Also returns the bases at these positions themselves.
     """
     def upper(x): return x.upper()
     def lower(x): return x.lower()
+    def nothing(x): return str(x)
     
-    differences_function = upper
-    others_function = lower
-    
+    if not qualities:
+        differences_function = upper
+        others_function = lower
+    else:
+        differences_function = nothing
+        others_function = nothing
+        
     indicated_aligned_seq = []
     bases_at_pos = []
     for i, a in enumerate(aligned_seq):
         if i in positions_replaced:
             indicated_aligned_seq.append(differences_function(a))
-            bases_at_pos.append(a.upper())
+            if not qualities:
+                bases_at_pos.append(a.upper())
+            else:
+                bases_at_pos.append(str(a))
         else:
             indicated_aligned_seq.append(others_function(a))
     return ''.join(indicated_aligned_seq), bases_at_pos
@@ -125,28 +134,58 @@ def get_hamming_distance(str1, str2):
             distance += 1
     return distance
 
-def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, hamming_check=False):    
+def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query_qualities, hamming_check=False):    
     fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
     positions_replaced = get_positions_from_md_tag(md_tag)
+    
     indicated_aligned_seq, alt_bases = incorporate_replaced_pos_info(fixed_aligned_seq, positions_replaced)
     indicated_reference_seq, ref_bases = incorporate_replaced_pos_info(reference_seq, positions_replaced)
+    indicated_qualities, qualities = incorporate_replaced_pos_info(query_qualities, positions_replaced, qualities=True)
     
     if hamming_check:
         hamming_distance = get_hamming_distance(indicated_aligned_seq, indicated_reference_seq)
         print("Hamming distance: {}".format(hamming_distance))
         assert(hamming_distance == len(alt_bases))
         
-    return alt_bases, ref_bases, positions_replaced
+    return alt_bases, ref_bases, qualities, positions_replaced
     
-def get_edit_information_wrapper(read, hamming_check=False):
+def get_edit_information_wrapper(read, reverse, hamming_check=False):
     md_tag = read.get_tag('MD')
     cigar_tuples = read.cigartuples
-    aligned_seq = reverse_complement(read.get_forward_sequence())
+    aligned_seq = read.get_forward_sequence()
+    query_qualities = read.query_qualities
+    
+    if not reverse:
+        aligned_seq = reverse_complement(aligned_seq)
+    
     reference_seq = read.get_reference_sequence().lower()
     return(get_edit_information(md_tag,
                                 cigar_tuples, 
                                 aligned_seq, 
-                                reference_seq, 
+                                reference_seq,
+                                query_qualities,
                                 hamming_check=hamming_check))
     
+def has_edits(read):
+    # Are there any replacements?
+    md_tag = read.get_tag('MD')
+    if ('G' in md_tag or 'A' in md_tag or 'T' in md_tag or 'C' in md_tag):
+        # No edits present in this read, based on MD tag contents
+        return True
     
+    
+def get_dataframe_from_barcode_dict(barcode_to_position_to_alts):
+    all_rows = []
+    for barcode, contig_dict in barcode_to_position_to_alts.items():
+        for contig, pos_dict in contig_dict.items():
+                for pos, alt_dict in pos_dict.items():
+                    for alt, read_dict in alt_dict.items():
+                        for read, value in read_dict.items():
+                            new_row = (barcode, contig, pos, alt, read, value[0], value[1], value[2])
+                            all_rows.append(new_row)
+
+    example_dataframe = pd.DataFrame(all_rows, columns=['barcode', 'contig', 'position_ref', 'alt', 'read_id', 'strand', 'dist_from_read_end', 'quality'])
+    example_dataframe['ref'] = [c.split('_')[1] for c in example_dataframe['position_ref']]
+    example_dataframe['position'] = [int(c.split('_')[0]) for c in example_dataframe['position_ref']]
+
+    return example_dataframe
