@@ -22,33 +22,6 @@ def reverse_complement(input_seq):
     return ''.join(new_seq)
 
 
-def get_positions_from_md_tag(md_tag):
-    """
-    Figure out which positions are replaced, from the MD tag.
-    """
-    md_tag_parsed = []
-    for c in md_tag:
-        try:
-            md_tag_parsed.append(str(int(c)))
-        except Exception as e:
-            md_tag_parsed.append('-')
-
-    positions = []
-
-    try:
-        position_splitters = [int(i) for i in ''.join(md_tag_parsed).split('-')]
-    except Exception as e:
-        print("Failed on {}, {}".format(md_tag_parsed, e))
-        return None
-    
-    for s in position_splitters:
-        if len(positions) == 0:
-            positions.append(s)
-        else:
-            positions.append(positions[-1] + s + 1)
-    return positions
-
-
 def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples):
     """
     Update an aligned sequence to reflect any insertions (take away those positions) such
@@ -70,36 +43,6 @@ def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples):
             new_seq += ''.join(['*' for r in range(num_bases)])
             
     return new_seq
-
-
-def incorporate_replaced_pos_info(aligned_seq, positions_replaced, qualities=False):
-    """
-    Return the aligned sequence string, with specified positions indicated as upper case
-    and others as lower case. Also returns the bases at these positions themselves.
-    """
-    def upper(x): return x.upper()
-    def lower(x): return x.lower()
-    def nothing(x): return str(x)
-    
-    if not qualities:
-        differences_function = upper
-        others_function = lower
-    else:
-        differences_function = nothing
-        others_function = nothing
-        
-    indicated_aligned_seq = []
-    bases_at_pos = []
-    for i, a in enumerate(aligned_seq):
-        if i in positions_replaced:
-            indicated_aligned_seq.append(differences_function(a))
-            if not qualities:
-                bases_at_pos.append(a.upper())
-            else:
-                bases_at_pos.append(str(a))
-        else:
-            indicated_aligned_seq.append(others_function(a))
-    return ''.join(indicated_aligned_seq), bases_at_pos
 
 
 def get_contig_lengths_dict(bam_handle):
@@ -137,43 +80,11 @@ def get_hamming_distance(str1, str2):
             distance += 1
     return distance
 
-
-def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query_qualities, hamming_check=False):    
-    fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
-    positions_replaced = get_positions_from_md_tag(md_tag)
-    
-    indicated_aligned_seq, alt_bases = incorporate_replaced_pos_info(fixed_aligned_seq, positions_replaced)
-    indicated_reference_seq, ref_bases = incorporate_replaced_pos_info(reference_seq, positions_replaced)
-    indicated_qualities, qualities = incorporate_replaced_pos_info(query_qualities, positions_replaced, qualities=True)
-    
-    if hamming_check:
-        hamming_distance = get_hamming_distance(indicated_aligned_seq, indicated_reference_seq)
-        print("Hamming distance: {}".format(hamming_distance))
-        assert(hamming_distance == len(alt_bases))
-        
-    return alt_bases, ref_bases, qualities, positions_replaced
-    
-    
-def get_edit_information_wrapper(read, reverse, hamming_check=False):
-    md_tag = read.get_tag('MD')
-    cigar_tuples = read.cigartuples
-    aligned_seq = read.get_forward_sequence()
-    query_qualities = read.query_qualities
-    
-    if not reverse:
-        aligned_seq = reverse_complement(aligned_seq)
-    
-    reference_seq = read.get_reference_sequence().lower()
-    return(get_edit_information(md_tag,
-                                cigar_tuples, 
-                                aligned_seq, 
-                                reference_seq,
-                                query_qualities,
-                                hamming_check=hamming_check))
     
     
 def has_edits(read):
-    # Are there any replacements?
+    # Are there any replacements? This will always return true if a read has any deletions,
+    # as the deletions will also be followed by ACT or G...
     md_tag = read.get_tag('MD')
     if ('G' in md_tag or 'A' in md_tag or 'T' in md_tag or 'C' in md_tag):
         # No edits present in this read, based on MD tag contents
@@ -229,21 +140,21 @@ def update_coverage_array(read, contig, contig_length, barcode_to_coverage_dict)
     return reference_positions_covered_by_read
     
     
-def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_alts):
+def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_alts, verbose=False):
     read_barcode = read.get_tag('CR')
     is_reverse = read.is_reverse
     reference_start = read.reference_start
     reference_end = read.reference_end
     read_id = read.query_name
-        
+     
+    if verbose:
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print("Read ID:", read_id)
+        print("----------------------------")
+      
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
         return 'no_edits', {}
-        
-    if '^' in read.get_tag('MD'):
-        if '^' in read.get_tag('MD'):
-            # FOR NOW SKIP DELETIONS, THEY ARE TRICKY TO PARSE...
-            return 'deletion', {}
     
     if read.is_secondary:
         return 'secondary', {}
@@ -253,7 +164,13 @@ def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_al
     if is_reverse:
         strand = '-'
             
-    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse)
+    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse, verbose=verbose)
+
+    if len(alt_bases) == 0:
+        # These are reads that had deletions, and no edits.
+        # They are categorized later because it is hard to tell from the MD tag if they have
+        # edits at first when deletions are also indicated.
+        return 'no_edits', {}
     
     num_edits_of_each_type = defaultdict(lambda:0)
     
@@ -272,5 +189,162 @@ def add_read_information_to_barcode_dict(read, contig, barcode_to_position_to_al
         [alt][read_id] = values_to_store
         
         num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
-        
+    
     return None, num_edits_of_each_type
+
+
+
+def get_positions_from_md_tag(md_tag, verbose=False):
+    """
+    Figure out which positions are replaced, from the MD tag.
+    """ 
+    md_tag_parsed = []
+    
+    in_deletion = False
+    
+    for c in md_tag:
+        if c == '^':
+            in_deletion = True
+            continue
+        else:
+            
+            try:
+                value = str(int(c))
+                
+                if in_deletion:
+                    in_deletion = False
+                    md_tag_parsed.append('-')
+                    
+                md_tag_parsed.append(value)
+                
+            except Exception as e:
+                if not in_deletion:
+                    md_tag_parsed.append('-')
+                else:
+                    md_tag_parsed.append('+1')
+
+    positions = []
+
+    try:
+        position_splitters = [i for i in ''.join(md_tag_parsed).split('-')]
+    except Exception as e:
+        print("Failed on {}, {}".format(md_tag_parsed, e))
+        return None
+    
+    if verbose:
+        print(position_splitters)
+    
+    for s in position_splitters:
+        # account for plus signs
+        if '+' in s:
+            s_sum = np.sum([int(i) for i in s.split('+')])
+            s = s_sum - 1
+        else:
+            s = int(s)
+        if len(positions) == 0:
+            positions.append(s)
+        else:
+            positions.append(positions[-1] + s + 1)
+            
+    if verbose:
+        print(positions)
+        
+    return positions
+
+
+def incorporate_replaced_pos_info(aligned_seq, positions_replaced, positions_deleted=[], qualities=False):
+    """
+    Return the aligned sequence string, with specified positions indicated as upper case
+    and others as lower case. Also returns the bases at these positions themselves.
+    """
+    def upper(x): return x.upper()
+    def lower(x): return x.lower()
+    def nothing(x): return str(x)
+    
+    if not qualities:
+        differences_function = upper
+        others_function = lower
+    else:
+        differences_function = nothing
+        others_function = nothing
+        
+    indicated_aligned_seq = []
+    bases_at_pos = []
+    for i, a in enumerate(aligned_seq):
+        if a == '*':
+            indicated_aligned_seq.append(a)
+            continue
+            
+        if i in positions_replaced and i not in positions_deleted:
+            indicated_aligned_seq.append(differences_function(a))
+            if not qualities:
+                bases_at_pos.append(a.upper())
+            else:
+                bases_at_pos.append(str(a))
+        else:
+            indicated_aligned_seq.append(others_function(a))
+    return ''.join(indicated_aligned_seq), bases_at_pos
+
+def find(s, ch):
+    return [i for i, ltr in enumerate(s) if ltr == ch]
+
+def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query_qualities, hamming_check=False, verbose=False):   
+    fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
+    positions_replaced = get_positions_from_md_tag(md_tag, verbose=verbose)
+    
+
+    indicated_aligned_seq, alt_bases = incorporate_replaced_pos_info(fixed_aligned_seq, positions_replaced)
+    
+    # Account for deletions
+    if '*' in indicated_aligned_seq:
+        positions_deleted = find(indicated_aligned_seq, '*')
+    else:
+        positions_deleted = []
+        
+    indicated_reference_seq, ref_bases = incorporate_replaced_pos_info(reference_seq, positions_replaced, positions_deleted=positions_deleted)
+    indicated_qualities, qualities = incorporate_replaced_pos_info(query_qualities, positions_replaced, qualities=True)
+    
+    if verbose:
+        print(cigar_tuples)
+        print(fixed_aligned_seq)
+
+        print(indicated_reference_seq)
+        print(indicated_aligned_seq)
+        print('alt bases', alt_bases)
+        print('ref bases', ref_bases)
+        
+    if hamming_check:
+        num_deletions = indicated_aligned_seq.count('*')
+        hamming_distance = get_hamming_distance(indicated_aligned_seq, indicated_reference_seq) - num_deletions
+        print("Hamming distance: {}".format(hamming_distance))
+        assert(hamming_distance == len(alt_bases))
+        
+    return alt_bases, ref_bases, qualities, positions_replaced
+    
+    
+def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=False):
+    md_tag = read.get_tag('MD')
+    
+
+    cigar_tuples = read.cigartuples
+    aligned_seq = read.get_forward_sequence()
+    query_qualities = read.query_qualities
+    
+    if not reverse:
+        aligned_seq = reverse_complement(aligned_seq)
+    
+    reference_seq = read.get_reference_sequence().lower()
+    
+    if verbose:
+        print(md_tag)
+        print(reference_seq.upper())
+        print(aligned_seq)
+    
+    return(get_edit_information(md_tag,
+                                cigar_tuples, 
+                                aligned_seq, 
+                                reference_seq,
+                                query_qualities,
+                                hamming_check=hamming_check,
+                                verbose=verbose
+                               ))
