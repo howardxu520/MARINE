@@ -141,7 +141,7 @@ def update_coverage_array(read, contig, contig_length, barcode_to_coverage_dict)
     return reference_positions_covered_by_read
     
     
-def add_read_information_to_barcode_dict(read, contig, verbose=False):
+def get_read_information(read, contig, verbose=False):
     read_barcode = read.get_tag('CB')
     is_reverse = read.is_reverse
     reference_start = read.reference_start
