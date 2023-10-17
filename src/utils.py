@@ -20,8 +20,7 @@ def get_intervals(contig, contig_lengths_dict, num_intervals=4):
         end = start + interval_length
     return intervals
 
-def close_bam_filehandle_and_index_bam(bam_file_handle, barcode_bam_file_path):
-    bam_file_handle.close()
+def index_bam(barcode_bam_file_path):
     if not os.path.exists('{}.bai'.format(barcode_bam_file_path)):
         pysam.index(barcode_bam_file_path)
         
