@@ -42,6 +42,9 @@ def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples):
         if mod in [2]:
             # deletion
             new_seq += ''.join(['*' for r in range(num_bases)])
+        if mod in [3]:
+            # N
+            new_seq += ''.join(['N' for r in range(num_bases)])
             
     return new_seq
 
@@ -90,24 +93,6 @@ def has_edits(read):
     if ('G' in md_tag or 'A' in md_tag or 'T' in md_tag or 'C' in md_tag):
         # No edits present in this read, based on MD tag contents
         return True
-    
-    
-def get_dataframe_from_barcode_dict(barcode_to_position_to_alts):
-    all_rows = []
-    for barcode, contig_dict in barcode_to_position_to_alts.items():
-        for contig, pos_dict in contig_dict.items():
-                for pos, alt_dict in pos_dict.items():
-                    for alt, read_dict in alt_dict.items():
-                        for read, value in read_dict.items():
-                            new_row = (barcode, contig, pos, alt, read, value[0], value[1], value[2])
-                            all_rows.append(new_row)
-
-    example_dataframe = pd.DataFrame(all_rows, columns=['barcode', 'contig', 'position_ref', 'alt', 'read_id', 'strand', 'dist_from_read_end', 'quality'])
-    example_dataframe['ref'] = [c.split('_')[1] for c in example_dataframe['position_ref']]
-    example_dataframe['position'] = [int(c.split('_')[0]) for c in example_dataframe['position_ref']]
-
-    return example_dataframe
-
 
 def get_total_coverage_for_contig_at_position(r, coverage_dict):
     position = r.position
@@ -147,7 +132,9 @@ def get_read_information(read, contig, verbose=False):
     reference_start = read.reference_start
     reference_end = read.reference_end
     read_id = read.query_name
-     
+    mapq = read.mapping_quality
+    cigarstring = read.cigarstring
+    
     if verbose:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print("Read ID:", read_id)
@@ -159,7 +146,10 @@ def get_read_information(read, contig, verbose=False):
     
     if read.is_secondary:
         return 'secondary', [], {}
-        
+       
+    #if 'N' in cigarstring:
+    #    return 'N', [], {}
+    
     # PROCESS READ TO EXTRACT EDIT INFORMATION
     strand = '+'
     if is_reverse:
@@ -188,7 +178,7 @@ def get_read_information(read, contig, verbose=False):
         values_to_store = strand, distance_from_read_end, qual
 
         list_of_rows.append([
-            read_barcode, str(contig), str(updated_position), ref, alt, read_id, strand, str(distance_from_read_end), str(qual)
+            read_barcode, str(contig), str(updated_position), ref, alt, read_id, strand, str(distance_from_read_end), str(qual), str(mapq)
         ])
         
         num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
@@ -308,7 +298,7 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
     indicated_qualities, qualities = incorporate_replaced_pos_info(query_qualities, positions_replaced, qualities=True)
     
     if verbose:
-        print(cigar_tuples)
+        print('CIGAR tuples', cigar_tuples)
         print(fixed_aligned_seq)
 
         print(indicated_reference_seq)
@@ -327,8 +317,8 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
     
 def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=False):
     md_tag = read.get_tag('MD')
-    
-
+    cigarstring = read.cigarstring
+       
     cigar_tuples = read.cigartuples
     aligned_seq = read.get_forward_sequence()
     query_qualities = read.query_qualities
@@ -339,9 +329,10 @@ def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=Fal
     reference_seq = read.get_reference_sequence().lower()
     
     if verbose:
-        print(md_tag)
-        print(reference_seq.upper())
-        print(aligned_seq)
+        print("MD tag:", md_tag)
+        print("CIGAR string", cigarstring)
+        print("Reference seq:", reference_seq.upper())
+        print("Aligned seq:", aligned_seq)
     
     return(get_edit_information(md_tag,
                                 cigar_tuples, 
