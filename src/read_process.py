@@ -23,7 +23,7 @@ def reverse_complement(input_seq):
     return ''.join(new_seq)
 
 
-def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples):
+def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples, insertions=True, deletions=True, junctions=True):
     """
     Update an aligned sequence to reflect any insertions (take away those positions) such
     that it can be better compared base-to-base to a reference sequence.
@@ -31,22 +31,30 @@ def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples):
     new_seq = ''
     
     current_pos = 0
+    
+    positions_of_deletions = []
+    
     for mod, num_bases in cigar_tuples:
         if mod == 0:
             # match
             new_seq += aligned_sequence[current_pos:current_pos+num_bases]
             current_pos += num_bases
-        if mod in [1, 4]:
-            # insertion or soft-clipping
-            current_pos += num_bases
+        if mod in [1]:
+            # insertion -- only do this for aligned sequence, not reference
+            if insertions:
+                current_pos += num_bases
+            
         if mod in [2]:
-            # deletion
-            new_seq += ''.join(['*' for r in range(num_bases)])
+            # deletion -- only do this for aligned sequence, not reference
+            if deletions:
+                new_seq += ''.join(['*' for r in range(num_bases)])
         if mod in [3]:
             # N
-            new_seq += ''.join(['N' for r in range(num_bases)])
+            if junctions:
+                new_seq += ''.join(['n' for r in range(num_bases)])
             
     return new_seq
+
 
 
 def get_contig_lengths_dict(bam_handle):
@@ -175,8 +183,6 @@ def get_read_information(read, contig, verbose=False):
 
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
-        values_to_store = strand, distance_from_read_end, qual
-
         list_of_rows.append([
             read_barcode, str(contig), str(updated_position), ref, alt, read_id, strand, str(distance_from_read_end), str(qual), str(mapq)
         ])
@@ -281,38 +287,95 @@ def incorporate_replaced_pos_info(aligned_seq, positions_replaced, positions_del
 def find(s, ch):
     return [i for i, ltr in enumerate(s) if ltr == ch]
 
-def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query_qualities, hamming_check=False, verbose=False):   
-    fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
-    positions_replaced = get_positions_from_md_tag(md_tag, verbose=verbose)
-    
 
-    indicated_aligned_seq, alt_bases = incorporate_replaced_pos_info(fixed_aligned_seq, positions_replaced)
+def remove_softclipped_bases(cigar_tuples, aligned_sequence):
+    had_front_clipped = 0
+    had_back_clipped = 0
     
+    first_tuple = cigar_tuples[0]
+    last_tuple = cigar_tuples[-1]
+    
+    to_clip_from_front = 0
+    to_clip_from_back = 0
+    
+    if first_tuple[0] == 4:
+        to_clip_from_front = first_tuple[1]
+        had_front_clipped = 1
+    if last_tuple[0] == 4:
+        to_clip_from_back = last_tuple[1]
+        had_back_clipped = 1
+        
+    cropped_sequence = aligned_sequence[to_clip_from_front:(len(aligned_sequence)-to_clip_from_back)] 
+    cropped_tuples = cigar_tuples[had_front_clipped:len(cigar_tuples)-had_back_clipped]
+    
+    return cropped_sequence, cropped_tuples  
+
+
+def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query_qualities, hamming_check=False, verbose=False): 
+    if verbose:
+            print('CIGAR tuples before clipping (if needed):\n', cigar_tuples)
+            print('Aligned sequence before clipping (if needed):\n', aligned_seq)
+
+    aligned_seq, cigar_tuples = remove_softclipped_bases(cigar_tuples, aligned_seq)
+
+    if verbose:
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print('CIGAR tuples after clipping (if needed):\n', cigar_tuples)
+        print('Aligned sequence after clipping (if needed):\n', aligned_seq)
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+
+
+    positions_replaced = get_positions_from_md_tag(md_tag, verbose=verbose)
+    # Incorporate insertions, deletions, and splice junctions (N)
+    fixed_aligned_seq_for_deletion_locations = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples, junctions=False)
+    fixed_aligned_seq = incorporate_insertions_and_deletions(aligned_seq, cigar_tuples)
+
     # Account for deletions
-    if '*' in indicated_aligned_seq:
-        positions_deleted = find(indicated_aligned_seq, '*')
+    if '*' in fixed_aligned_seq_for_deletion_locations:
+        # These are coordinates after already fixing the read with deletions, insertions and junctions
+        positions_deleted = find(fixed_aligned_seq_for_deletion_locations, '*')
     else:
         positions_deleted = []
-        
-    indicated_reference_seq, ref_bases = incorporate_replaced_pos_info(reference_seq, positions_replaced, positions_deleted=positions_deleted)
-    indicated_qualities, qualities = incorporate_replaced_pos_info(query_qualities, positions_replaced, qualities=True)
-    
-    if verbose:
-        print('CIGAR tuples', cigar_tuples)
-        print(fixed_aligned_seq)
 
-        print(indicated_reference_seq)
-        print(indicated_aligned_seq)
+    indicated_reference_seq, ref_bases = incorporate_replaced_pos_info(reference_seq, positions_replaced, positions_deleted=positions_deleted)
+    fixed_reference_seq = incorporate_insertions_and_deletions(indicated_reference_seq, cigar_tuples, insertions=False, deletions=False)
+    indicated_qualities, qualities = incorporate_replaced_pos_info(query_qualities, positions_replaced, qualities=True)
+
+
+    # Get global coordinates of positions replaced
+    global_positions_replaced = []
+    finalized_fixed_aligned_seq = ''
+    alt_bases = []
+    for i, character in enumerate(fixed_reference_seq):
+        if character.isupper():
+            global_positions_replaced.append(i)
+            upper_char = fixed_aligned_seq[i].upper()
+            finalized_fixed_aligned_seq += upper_char
+            if upper_char != '*':
+                alt_bases.append(upper_char)
+        else:
+            lower_char = fixed_aligned_seq[i].lower()
+            finalized_fixed_aligned_seq += lower_char
+
+    if verbose:
+        print("Indicated reference seq:\n", indicated_reference_seq)
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print("Fixed reference seq:\n", fixed_reference_seq)
+        print("Fixed aligned seq:\n", fixed_aligned_seq)
+        print("Finalized fixed aligned seq:\n", finalized_fixed_aligned_seq)
+
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('alt bases', alt_bases)
         print('ref bases', ref_bases)
-        
+
+
     if hamming_check:
-        num_deletions = indicated_aligned_seq.count('*')
-        hamming_distance = get_hamming_distance(indicated_aligned_seq, indicated_reference_seq) - num_deletions
+        num_deletions = finalized_fixed_aligned_seq.count('*')
+        hamming_distance = get_hamming_distance(finalized_fixed_aligned_seq, fixed_reference_seq) - num_deletions
         print("Hamming distance: {}".format(hamming_distance))
         assert(hamming_distance == len(alt_bases))
-        
-    return alt_bases, ref_bases, qualities, positions_replaced
+
+    return alt_bases, ref_bases, qualities, global_positions_replaced
     
     
 def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=False):
