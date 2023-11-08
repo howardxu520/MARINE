@@ -1,6 +1,9 @@
 import math
 import os
 import pysam
+import polars as pl
+import pandas as pd
+import numpy as np
 
 def get_intervals(contig, contig_lengths_dict, num_intervals=4):
     contig_length = contig_lengths_dict.get(contig)
@@ -49,3 +52,31 @@ def remove_file_if_exists(file_path):
 def make_folder(folder_path):
     if not os.path.exists(folder_path):
         os.mkdir(folder_path)
+        
+        
+def get_edit_info_for_barcode_in_contig(edit_info, contig, barcode, output_folder):
+    
+    bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
+    barcode_bam = '{}/{}_{}.bam'.format(bam_subfolder, contig, barcode)
+
+    samfile_for_barcode = pysam.AlignmentFile(barcode_bam, "rb")
+
+    edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
+    positions_for_barcode = list(edit_info_for_barcode["position"])
+
+    coverage = []
+    for pos in positions_for_barcode:
+        coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(contig, pos-1, pos, quality_threshold=0))
+        coverage.append(coverage_at_pos)
+
+    edit_info_for_barcode.with_columns(pl.Series(name="coverage", values=coverage)) 
+
+    return edit_info_for_barcode.to_pandas()
+
+
+def get_edit_info_for_barcode_in_contig_wrapper(parameters):
+    edit_info, contig, barcode, output_folder = parameters
+    edit_info_for_barcode = get_edit_info_for_barcode_in_contig(edit_info, contig, barcode, output_folder)
+    edit_info_for_barcode['contig'] = edit_info_for_barcode.contig.astype(str)
+
+    return edit_info_for_barcode
