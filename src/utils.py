@@ -62,21 +62,22 @@ def get_edit_info_for_barcode_in_contig(edit_info, contig, barcode, output_folde
     samfile_for_barcode = pysam.AlignmentFile(barcode_bam, "rb")
 
     edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
-    positions_for_barcode = list(edit_info_for_barcode["position"])
+    
+    positions_for_barcode = set(edit_info_for_barcode["position"].unique())
 
-    coverage = []
+    coverage_dict = {}
     for pos in positions_for_barcode:
         coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(contig, pos-1, pos, quality_threshold=0))
-        coverage.append(coverage_at_pos)
+        coverage_dict[pos] = coverage_at_pos
 
-    edit_info_for_barcode.with_columns(pl.Series(name="coverage", values=coverage)) 
-
-    return edit_info_for_barcode.to_pandas()
+    coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
+    return edit_info_for_barcode.to_pandas(), coverage_df
 
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     edit_info, contig, barcode, output_folder = parameters
-    edit_info_for_barcode = get_edit_info_for_barcode_in_contig(edit_info, contig, barcode, output_folder)
+    edit_info_for_barcode, coverage_df = get_edit_info_for_barcode_in_contig(edit_info, contig, barcode, output_folder)
     edit_info_for_barcode['contig'] = edit_info_for_barcode.contig.astype(str)
-
-    return edit_info_for_barcode
+    coverage_df['contig'] = edit_info_for_barcode.contig.astype(str)
+    
+    return edit_info_for_barcode, coverage_df
