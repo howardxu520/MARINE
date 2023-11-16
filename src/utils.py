@@ -6,6 +6,9 @@ import pandas as pd
 import numpy as np
 
 def get_intervals(contig, contig_lengths_dict, num_intervals=4):
+    """
+    Splits contig coordinates into a list of {num_intervals} coordinates of equal size.
+    """
     contig_length = contig_lengths_dict.get(contig)
     interval_length = math.ceil(contig_length/num_intervals)
     start = 0
