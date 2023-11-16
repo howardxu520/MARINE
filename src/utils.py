@@ -52,8 +52,63 @@ def remove_file_if_exists(file_path):
 def make_folder(folder_path):
     if not os.path.exists(folder_path):
         os.mkdir(folder_path)
+
+def get_coverage_df(edit_info, contig, output_folder):
+    
+    bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
+    contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
+
+    print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
+    samfile_for_barcode = pysam.AlignmentFile(contig_bam, "rb")
+
+    print("Contig {}. Loaded bamfile...".format(contig))
+    unique_barcodes = sorted(list(edit_info.unique("barcode")["barcode"]))
+    
+    coverage_dict = {}
+    
+    print("Contig {}. Iterating through barcodes...".format(contig))
+    for i, barcode in enumerate(unique_barcodes):
+        if i % 300 == 0:
+            print("{}/{} barcodes for {}...".format(i, len(unique_barcodes), contig))
+            
+        edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
+        positions_for_barcode = set(edit_info_for_barcode["position"].unique())
+        #print('\t\tpositions: {}'.format(len(positions_for_barcode)))
+        barcode_specific_contig = '{}_{}'.format(contig, barcode)
         
+        for pos in positions_for_barcode:
+            # Take from 3_C_AAACCCAAGAACTTCC-1, for example, to 3_AAACCCAAGAACTTCC-1'
+            barcode_specific_contig_split = barcode_specific_contig.split("_")
+            barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
+            
+            coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, pos-1, pos, quality_threshold=0))
+            coverage_dict['{}:{}'.format(barcode, pos)] = coverage_at_pos
+
+    coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
+    return coverage_df
+
+
+def get_edit_info_for_barcode_in_contig_wrapper(parameters):
+    edit_info, contig, output_folder = parameters
+    coverage_df = get_coverage_df(edit_info, contig, output_folder)
+    coverage_df.columns = ['coverage']
+    
+    edit_info = edit_info.with_columns(
+    pl.concat_str(
+        [
+            pl.col("barcode"),
+            pl.col("position")
+        ],
+        separator=":",
+    ).alias("barcode_position"))
+    
+    edit_info_df = edit_info.to_pandas()
+    edit_info_df.index = edit_info_df['barcode_position']
         
+    return edit_info_df.join(coverage_df)
+
+"""
+# OLD
 def get_edit_info_for_barcode_in_contig(edit_info, contig, barcode, output_folder):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
@@ -81,3 +136,4 @@ def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     coverage_df['contig'] = edit_info_for_barcode.contig.astype(str)
     
     return edit_info_for_barcode, coverage_df
+"""
