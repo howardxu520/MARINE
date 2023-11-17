@@ -4,9 +4,88 @@ import pysam
 import polars as pl
 import pandas as pd
 import numpy as np
-from collections import OrderedDict
+import sys
+from collections import OrderedDict, defaultdict
 
 
+def make_edit_finding_jobs(bampath, output_folder, barcode_whitelist, num_intervals_per_contig, verbose):
+    jobs = []
+    
+    samfile = pysam.AlignmentFile(bampath, "rb")
+    contig_lengths_dict = get_contig_lengths_dict(samfile)
+    
+    for contig in contig_lengths_dict.keys():
+        # Skip useless contigs
+        if len(contig) > 5 or contig == 'Stamp':# or contig != '17':
+            continue
+
+        print("Contig {}".format(contig))
+        contig_length = contig_lengths_dict.get(contig)
+        intervals_for_contig = get_intervals(contig, contig_lengths_dict, num_intervals_per_contig)
+
+        # Set up for pool
+        for split_index, interval in enumerate(intervals_for_contig):
+            split_index = str(split_index).zfill(3)
+            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, barcode_whitelist, verbose]
+            jobs.append(parameters)
+    return jobs
+
+
+def get_contig_lengths_dict(bam_handle):
+    """
+    Given a bam file handle, read the header to return a dictionary
+    mapping contig names to lengths.
+    """
+    header_lines = bam_handle.text.split("\t")
+    contig_lengths = {}
+    found_sn = False
+    found_ln = False
+    for line in header_lines:
+        # Clean up line
+        line = line.split("\n")[0]
+        
+        # Extract contig names and lengths
+        if line.startswith("SN"):
+            found_sn = True
+            contig_name = line.split("SN:")[1]
+        if found_sn == True:
+            if line.startswith("LN"):
+                length = int(line.split("LN:")[1])
+                contig_lengths[contig_name] = length
+                found_sn = False
+                
+    return contig_lengths
+
+def read_barcode_whitelist_file(barcode_whitelist_file):
+    barcode_whitelist = set(pd.read_csv(barcode_whitelist_file, names=['barcodes']).barcodes.tolist())
+    
+    pretty_print("Barcodes in whitelist: {}".format(len(barcode_whitelist)))
+    return barcode_whitelist
+
+
+def pretty_print(contents, style=''):
+    if type(contents) == list:
+        for item in contents:
+            pretty_print(item)
+        sys.stdout.write("\n")
+    else:
+        to_write = '{}\n'.format(contents)
+        
+        before_line = None
+        after_line = None
+        
+        styled_line = ''.join([style for i in range(len(to_write))])
+        
+        if style != '':
+            # Line before
+            pretty_print(styled_line)
+            
+        sys.stdout.write(to_write)
+        
+        if style:
+            # Line after 
+            pretty_print(styled_line)
+    
 def get_intervals(contig, contig_lengths_dict, num_intervals=4):
     """
     Splits contig coordinates into a list of {num_intervals} coordinates of equal size.
@@ -43,7 +122,7 @@ def write_rows_to_info_file(list_of_rows, f):
         info_line = '\t'.join(info_list) + '\n'
         f.write(info_line)
         
-def write_header_to_bam(f):
+def write_header_to_edit_info(f):
     f.write('barcode\tcontig\tposition\tref\talt\tread_id\tstrand\tdist_from_end\tbase_quality\tmapping_quality\n')
     
 def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path, samfile_template):
