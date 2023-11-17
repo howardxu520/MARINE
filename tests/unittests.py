@@ -8,7 +8,7 @@ if directory_path not in sys.path:
     
 from read_process import get_contig_lengths_dict,\
 incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
-get_positions_from_md_tag,reverse_complement
+get_positions_from_md_tag,reverse_complement,remove_softclipped_bases
 
 
 class TestReadProcessFunctions(unittest.TestCase): 
@@ -59,6 +59,19 @@ class TestReadProcessFunctions(unittest.TestCase):
         indicated_sequence, bases_at_pos = incorporate_replaced_pos_info('ACTAGACA', [0, 3, 6])
         self.assertEqual('ActAgaCa', indicated_sequence)
         self.assertEqual(['A', 'A', 'C'], bases_at_pos)
+        
+    def test_remove_softclipped_bases(self):
+        test_cigar_tuples = [(4, 2), (0, 7)]
+        test_aligned_sequence = '123456789'
+        clipped, cropped_tuples = remove_softclipped_bases(test_cigar_tuples, test_aligned_sequence)
+        assert(clipped == '3456789')
+        assert(cropped_tuples == [(0,7)])
+
+        test_cigar_tuples = [(0, 2), (4, 7)]
+        test_aligned_sequence = '123456789'
+        clipped, cropped_tuples = remove_softclipped_bases(test_cigar_tuples, test_aligned_sequence)
+        assert(clipped == '12')
+        assert(cropped_tuples == [(0,2)])
         
         
 unittest.main()
