@@ -1,4 +1,5 @@
 import math
+from glob import glob
 import os
 import pysam
 import polars as pl
@@ -8,18 +9,47 @@ import sys
 from collections import OrderedDict, defaultdict
 
 
-def make_edit_finding_jobs(bampath, output_folder, barcode_whitelist, num_intervals_per_contig, verbose):
+def get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_bams_folder):
+    bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
+    
+    subsets_per_contig = defaultdict(lambda:0)
+    for bam_index_written in bam_indices_written:
+        contig_label, subset_label = bam_index_written.split('_')
+        subsets_per_contig[contig_label] += 1
+
+
+    expected_contigs = list(overall_label_to_list_of_contents.keys())
+    contigs_to_write_bams_for = []
+    for c in expected_contigs:
+        num_written_indices = subsets_per_contig.get(c, 0)
+        if num_written_indices < 4:
+            print("Contig {} has {}/4 subset bams generated".format(c, num_written_indices))
+            contigs_to_write_bams_for.append(c)
+    
+    return contigs_to_write_bams_for
+
+
+def make_edit_finding_jobs(bampath, output_folder, barcode_whitelist, contigs=[], num_intervals_per_contig=16, verbose=False):
     jobs = []
     
     samfile = pysam.AlignmentFile(bampath, "rb")
     contig_lengths_dict = get_contig_lengths_dict(samfile)
     
+    if len(contigs) == 0:
+        contigs_to_use = set(contig_lengths_dict.keys())
+    else:
+        contigs_to_use = set(contigs)
+        
     for contig in contig_lengths_dict.keys():
         # Skip useless contigs
         if len(contig) > 5 or contig == 'Stamp':# or contig != '17':
             continue
+            
+        if contig not in contigs_to_use:
+            continue
 
-        print("Contig {}".format(contig))
+        pretty_print("\tContig {}".format(contig))
+        
         contig_length = contig_lengths_dict.get(contig)
         intervals_for_contig = get_intervals(contig, contig_lengths_dict, num_intervals_per_contig)
 
@@ -68,6 +98,7 @@ def pretty_print(contents, style=''):
         for item in contents:
             pretty_print(item)
         sys.stdout.write("\n")
+        
     else:
         to_write = '{}\n'.format(contents)
         

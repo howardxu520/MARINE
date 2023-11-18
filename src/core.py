@@ -8,25 +8,26 @@ import polars as pl
 from collections import defaultdict
 import multiprocessing
 from tqdm import tqdm
+from multiprocessing import get_context
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_information_wrapper,\
 has_edits,get_total_coverage_for_contig_at_position,\
 print_read_info, update_coverage_array, get_read_information, get_hamming_distance, remove_softclipped_bases,find
 
-from utils import get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
-write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs
+from utils import get_contigs_that_need_bams_written, get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
+write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs, pretty_print
 
 import os, psutil
 
 
-def run_edit_identifier(bampath, output_folder, barcode_whitelist, num_intervals_per_contig, verbose=False):
+def run_edit_identifier(bampath, output_folder, barcode_whitelist, contigs=[], num_intervals_per_contig=16, verbose=False):
     # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
     make_folder(edit_info_subfolder)
     
-    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, barcode_whitelist, num_intervals_per_contig, verbose)
-    print("{} total jobs".format(len(edit_finding_jobs)))
+    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, barcode_whitelist, contigs, num_intervals_per_contig, verbose)
+    pretty_print("{} total jobs".format(len(edit_finding_jobs)))
 
     # Performance statistics
     overall_total_reads = 0
@@ -57,6 +58,21 @@ def run_edit_identifier(bampath, output_folder, barcode_whitelist, num_intervals
     return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads
 
 
+def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for):
+    start_time = time.perf_counter()
+
+    with pysam.AlignmentFile(bampath, "rb") as samfile:
+        # Get the bam header, which will be used for each of the split bams too
+        header_string = str(samfile.header)
+
+    with get_context("spawn").Pool(processes=16) as p:
+        max_ = len(contigs_to_generate_bams_for)
+        with tqdm(total=max_) as pbar:
+            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
+                pbar.update()
+
+    total_bam_generation_time = time.perf_counter() - start_time
+    return total_bam_generation_time
 
 
 def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_whitelist=None, verbose=False):  
