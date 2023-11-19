@@ -1,8 +1,10 @@
 import pysam
 import os
+from glob import glob
 import sys
 from sys import getsizeof
 import time
+import numpy as np
 import pandas as pd
 import polars as pl
 from collections import defaultdict
@@ -16,9 +18,11 @@ has_edits,get_total_coverage_for_contig_at_position,\
 print_read_info, update_coverage_array, get_read_information, get_hamming_distance, remove_softclipped_bases,find
 
 from utils import get_contigs_that_need_bams_written, get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
-write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs, pretty_print
+write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs, pretty_print,\
+get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
+
 
 
 def run_edit_identifier(bampath, output_folder, barcode_whitelist, contigs=[], num_intervals_per_contig=16, verbose=False):
@@ -38,7 +42,7 @@ def run_edit_identifier(bampath, output_folder, barcode_whitelist, contigs=[], n
     results = []
     
     start_time = time.perf_counter()
-    with multiprocessing.Pool(processes=16) as p:
+    with multiprocessing.Pool(processes=64) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -58,6 +62,7 @@ def run_edit_identifier(bampath, output_folder, barcode_whitelist, contigs=[], n
     return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads
 
 
+
 def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for):
     start_time = time.perf_counter()
 
@@ -65,7 +70,9 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
         # Get the bam header, which will be used for each of the split bams too
         header_string = str(samfile.header)
 
-    with get_context("spawn").Pool(processes=16) as p:
+    num_processes = np.max([len(contigs_to_generate_bams_for), 64])
+    
+    with get_context("spawn").Pool(processes=num_processes) as p:
         max_ = len(contigs_to_generate_bams_for)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
@@ -73,6 +80,7 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
 
     total_bam_generation_time = time.perf_counter() - start_time
     return total_bam_generation_time
+
 
 
 def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_whitelist=None, verbose=False):  
@@ -186,3 +194,76 @@ def find_edits_and_split_bams_wrapper(parameters):
     except Exception as e:
         print('Contig {}: {}'.format(label, e))
         return 0, pd.DataFrame(), label, pd.DataFrame()
+    
+    
+    
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder):
+    coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
+        edit_info_grouped_per_contig_combined, 
+        output_folder)
+    
+    start_time = time.perf_counter()
+
+    results = []
+    # Spawn has to be used instead of the default fork when using the polars library
+    with get_context("spawn").Pool(processes=16) as p:
+        max_ = len(coverage_counting_job_params)
+        with tqdm(total=max_) as pbar:
+            for _ in p.imap_unordered(get_edit_info_for_barcode_in_contig_wrapper, coverage_counting_job_params):
+                pbar.update()
+                results.append(_)
+
+    total_time = time.perf_counter() - start_time
+    return results, total_time
+
+
+def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder):
+    job_params = []
+    
+    for contig, edit_info in edit_info_grouped_per_contig_combined.items():
+        job_params.append([edit_info, contig, output_folder])  
+    return job_params
+
+    
+def gather_edit_information_across_subcontigs(output_folder):
+    
+    splits = [i.split("/")[-1].split('_edit')[0] for i in sorted(glob('{}/edit_info/*'.format(output_folder)))]
+
+    all_edit_info_for_barcodes = []
+
+    edit_info_grouped_per_contig = defaultdict(lambda:[])
+    edit_info_grouped_per_contig_combined = defaultdict(lambda:[])
+
+    num_splits = len(splits)
+    print("Grouping edit information outputs by contig...")
+    for i, split in enumerate(splits):
+        if i%10 == 0:
+            print("\t{}/{}...".format(i, num_splits))
+
+        contig = split.split("_")[0]
+
+        barcode_to_coverage_dict = defaultdict()    
+
+        barcode_to_coverage_dict = defaultdict()
+        edit_info_file = '{}/edit_info/{}_edit_info.tsv'.format(output_folder, split)
+        edit_info_df = pd.read_csv(edit_info_file, sep='\t')
+        edit_info_df['position'] = edit_info_df['position'].astype(int)
+        edit_info_df['base_quality'] = edit_info_df['base_quality'].astype(int)
+        edit_info_df['mapping_quality'] = edit_info_df['mapping_quality'].astype(int)
+        edit_info_df['dist_from_end'] = edit_info_df['dist_from_end'].astype(int)
+
+        edit_info = pl.from_pandas(edit_info_df) 
+
+        for n in ["A", "C", "G", "T"]:
+            suffix = '{}-1'.format(n)
+            edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
+
+            edit_info_grouped_per_contig["{}_{}".format(contig, n)].append(edit_info_subset)
+
+        del edit_info_df
+    
+    print("Done grouping! Concatenating ...")
+    for contig, list_of_edit_info_dfs in edit_info_grouped_per_contig.items():
+        edit_info_grouped_per_contig_combined[contig] = pl.concat(list_of_edit_info_dfs)
+    print("Done concatenating!")
+    return edit_info_grouped_per_contig_combined
