@@ -42,7 +42,7 @@ def run_edit_identifier(bampath, output_folder, barcode_whitelist, contigs=[], n
     results = []
     
     start_time = time.perf_counter()
-    with multiprocessing.Pool(processes=64) as p:
+    with multiprocessing.Pool(processes=32) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -267,3 +267,58 @@ def gather_edit_information_across_subcontigs(output_folder):
         edit_info_grouped_per_contig_combined[contig] = pl.concat(list_of_edit_info_dfs)
     print("Done concatenating!")
     return edit_info_grouped_per_contig_combined
+
+
+import polars as pl
+
+
+
+def add_site_id(all_edit_info):
+    return all_edit_info.with_columns(
+        pl.concat_str(
+            [
+                pl.col("barcode"),
+                pl.col("contig"),
+                pl.col("position"),
+                pl.col("ref"),
+                pl.col("alt"),
+                pl.col("strand")
+            ],
+            separator="_",
+        ).alias("site_id"))
+
+
+
+def get_count_and_coverage_per_site(all_edit_info):
+    coverage_df = all_edit_info.group_by("site_id").agg(pl.col("coverage").max())
+    num_edits_df = all_edit_info.group_by("site_id").count()
+    return num_edits_df.join(coverage_df, on='site_id')
+
+
+
+def generate_site_level_information(all_edit_info):
+    number_of_edits = len(all_edit_info)
+
+    all_edit_info = add_site_id(all_edit_info)
+
+    number_of_sites = len(all_edit_info.group_by("site_id").agg(pl.col("coverage").unique()))
+
+    count_and_coverage_at_site_df = get_count_and_coverage_per_site(all_edit_info)
+
+    identifying_values = ["site_id", "barcode", "contig", "position", "ref", "alt", "strand"]
+
+    unique_rows_df = all_edit_info.select(identifying_values).unique(subset=identifying_values, maintain_order=True)
+    final_site_information_df = unique_rows_df.join(count_and_coverage_at_site_df, on='site_id')
+    final_site_information_df = final_site_information_df.with_columns(
+        pl.concat_str(
+            [
+                pl.col("ref"),
+                pl.col("alt")
+            ],
+            separator=">",
+        ).alias("conversion"))
+    
+    assert(len(final_site_information_df) == number_of_sites)
+    
+
+    return final_site_information_df

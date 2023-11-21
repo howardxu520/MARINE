@@ -25,10 +25,9 @@ write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bam
 pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
-gather_edit_information_across_subcontigs, run_coverage_calculator
-
-            
+gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
         
+    
 def edit_finder(bam_filepath, output_folder, barcode_whitelist, contigs=[], num_intervals_per_contig=16, 
                 verbose=False):
     
@@ -82,11 +81,14 @@ def coverage_processing(output_folder):
     return results, total_time
 
 def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, barcode_whitelist_file=None, verbose=False):
+    min_base_quality = 15
+    min_dist_from_end = 5
+    
     logging_folder = "{}/metadata/".format(output_folder)
     make_folder(logging_folder)
     
     barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
-    
+    """
     # Edit identification
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     pretty_print("Identifying edits", style="~")
@@ -115,13 +117,39 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, ba
     # Coverage calculation
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+    """
     pretty_print("Calculating coverage at edited sites", style='~')
     
     results, total_time = coverage_processing(output_folder)
     
     pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
-    all_edit_info = pd.concat(results)
-    all_edit_info.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+    all_edit_info_pd = pd.concat(results)
+    all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+    
+    # Filtering and site-level information
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    pretty_print("Filtering and calculating site-level statistics", style="~")
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+    all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
+    
+    # Convert to polars for faster operations
+    all_edit_info = pl.from_pandas(all_edit_info_pd)
+    all_edit_info_filtered = all_edit_info.filter(
+        (pl.col("base_quality") > min_base_quality) & (pl.col("dist_from_end") >= min_dist_from_end))
+    final_site_level_information_df = generate_site_level_information(all_edit_info_filtered)
+    
+
+    pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info)))
+    pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
+    pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
+
+
+    all_edit_info_filtered.write_csv('{}/filtered_edit_info.tsv'.format(output_folder), 
+                                     separator='\t')
+    final_site_level_information_df.write_csv('{}/site_info.tsv'.format(output_folder), 
+                                              separator='\t')
+
     pretty_print("Done!", style="+")
     
 if __name__ == '__main__':
@@ -155,7 +183,7 @@ if __name__ == '__main__':
     
     run(bam_filepath, 
         output_folder, 
-        contigs=['1'],
+        #contigs=['1'],
         barcode_whitelist_file=barcode_whitelist_file,
         num_intervals_per_contig=16
        )
