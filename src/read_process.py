@@ -56,33 +56,6 @@ def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples, inserti
     return new_seq
 
 
-
-def get_contig_lengths_dict(bam_handle):
-    """
-    Given a bam file handle, read the header to return a dictionary
-    mapping contig names to lengths.
-    """
-    header_lines = bam_handle.text.split("\t")
-    contig_lengths = {}
-    found_sn = False
-    found_ln = False
-    for line in header_lines:
-        # Clean up line
-        line = line.split("\n")[0]
-        
-        # Extract contig names and lengths
-        if line.startswith("SN"):
-            found_sn = True
-            contig_name = line.split("SN:")[1]
-        if found_sn == True:
-            if line.startswith("LN"):
-                length = int(line.split("LN:")[1])
-                contig_lengths[contig_name] = length
-                found_sn = False
-                
-    return contig_lengths
-
-
 def get_hamming_distance(str1, str2):
     assert(len(str1) == len(str2))
     distance = 0
