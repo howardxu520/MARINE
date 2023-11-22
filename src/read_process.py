@@ -70,7 +70,11 @@ def get_hamming_distance(str1, str2):
 def has_edits(read):
     # Are there any replacements? This will always return true if a read has any deletions,
     # as the deletions will also be followed by ACT or G...
-    md_tag = read.get_tag('MD')
+    try:
+        md_tag = read.get_tag('MD')
+    except Exception as e:
+        print("It seems like there is an MD tag missing", e)
+        
     if ('G' in md_tag or 'A' in md_tag or 'T' in md_tag or 'C' in md_tag):
         # No edits present in this read, based on MD tag contents
         return True
@@ -86,30 +90,16 @@ def print_read_info(read):
     md_tag = read.get_tag('MD')
     read_id = read.query_name
     cigar_string = read.cigarstring
-    barcode = read.get_tag('CB')
+    barcode = read.get_tag('CB', None)
     print('MD tag', md_tag)
     print("CIGAR tag", cigar_string)
     print('barcode', barcode)
     
-
-def update_coverage_array(read, contig, contig_length, barcode_to_coverage_dict):
-    # Check if we already are tracking coverage for this cell, and if not set up a new array
-    barcode = read.get_tag('CB')
-    position_coverage_tracker_for_contig = barcode_to_coverage_dict.get(barcode, [])
-    if len(position_coverage_tracker_for_contig) == 0: 
-        position_coverage_tracker_for_contig = np.zeros(contig_length)
     
-    reference_positions_covered_by_read = read.get_reference_positions()
-    position_coverage_tracker_for_contig[reference_positions_covered_by_read] += 1
-    
-    barcode_to_coverage_dict[barcode] = sparse.csr_matrix(position_coverage_tracker_for_contig)
-    
-    return reference_positions_covered_by_read
-    
-    
-def get_read_information(read, contig, barcode_tag='CB', verbose=False):
+def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True):
     read_barcode = 'no_barcode' if barcode_tag is None else read.get_tag(barcode_tag)
     is_reverse = read.is_reverse
+        
     reference_start = read.reference_start
     reference_end = read.reference_end
     read_id = read.query_name
@@ -120,7 +110,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False):
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print("Read ID:", read_id)
         print("----------------------------")
-      
+    
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
         return 'no_edits', [], {}
@@ -136,7 +126,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False):
     if is_reverse:
         strand = '-'
             
-    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse, verbose=verbose)
+    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse, verbose)
 
     if len(alt_bases) == 0:
         # These are reads that had deletions, and no edits.
@@ -153,7 +143,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False):
         if is_reverse:
             alt = reverse_complement(alt)
             ref = reverse_complement(ref)
-
+        
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
         list_of_rows.append([
