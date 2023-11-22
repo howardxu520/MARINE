@@ -96,7 +96,7 @@ def print_marine_logo():
     for l in logo_lines:
         pretty_print(l)
         
-    pretty_print("Multi-threaded Algorithm for Rapid Identification of Nucleotide Edits", style="=")
+    pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
     
 def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False):
@@ -106,6 +106,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     
     print_marine_logo()
     
+    """
     logging_folder = "{}/metadata/".format(output_folder)
     make_folder(logging_folder)
     
@@ -146,7 +147,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
     pretty_print("Calculating coverage at edited sites", style='~')
-    
+    """
     results, total_time = coverage_processing(output_folder, barcode_tag=barcode_tag)
     
     pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
@@ -200,13 +201,13 @@ if __name__ == '__main__':
     
     
     reverse_stranded_dict = {
-        sc_subset_ct: True,
-        bulk_default_ct: False,
-        bulk_default_ai: False
+        sc_subset_ct: False,
+        bulk_default_ct: True,
+        bulk_default_ai: True
     }
     
-    #default_bam_filepath = bulk_default_ct
-    default_bam_filepath = sc_subset_ct
+    default_bam_filepath = bulk_default_ct
+    #default_bam_filepath = sc_subset_ct
     
     default_output_folder = '/projects/ps-yeolab3/ekofman/sailor2/scripts/{}'.format(output_names.get(default_bam_filepath))
     
@@ -249,7 +250,7 @@ if __name__ == '__main__':
     
     run(bam_filepath, 
         output_folder, 
-        contigs=['19'],
+        #contigs=['1', '2','3'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,

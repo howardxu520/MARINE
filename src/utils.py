@@ -195,18 +195,20 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     print("Contig {}. Iterating through barcodes...".format(contig))
     for i, barcode in enumerate(unique_barcodes):
         if i % 300 == 0:
-            print("{}/{} barcodes for {}...".format(i, len(unique_barcodes), contig))
+            print("{}/{} barcodes for {}...".format(i+1, len(unique_barcodes), contig))
             
         edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
-        #print('\t\tpositions: {}'.format(len(positions_for_barcode)))
         
         num_positions = len(positions_for_barcode)
-        print("Total edit site positions: {}".format(num_positions))
+        if not barcode_tag:
+            print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
+            
         for i, pos in enumerate(positions_for_barcode):
             
-            if i%1000 == 0:
-                print("\tCoverage computed at {}/{} positions...".format(i, num_positions))
+            if not barcode_tag:
+                if i%10000 == 0:
+                    print("\t{}:\tCoverage computed at {}/{} positions...".format(contig, i, num_positions))
             
             if barcode_tag:
                 barcode_specific_contig = '{}_{}'.format(contig, barcode)
@@ -254,7 +256,7 @@ def sort_bam(bam_file_name):
     return output_name
 
 
-def write_reads_to_file(reads, bam_file_name, header_string):
+def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
     header = pysam.AlignmentHeader.from_text(header_string)
     
     header_dict = header.as_dict()
@@ -272,10 +274,12 @@ def write_reads_to_file(reads, bam_file_name, header_string):
     print("\tNum barcodes for {}: {}".format(bam_file_name, len(all_barcodes_for_contig)))
         
     for new_sn in all_barcodes_for_contig:
-        new_sn_chrom = new_sn.split("_")[0]
-        
-        if new_sn_chrom not in lengths_for_sn:
-            new_ln = lengths_for_sn.get(new_sn_chrom)
+        original_chrom = new_sn.split("_")[0]
+        if not barcode_tag:
+            new_sn = new_sn.split("_")[0]
+            
+        if new_sn not in lengths_for_sn:
+            new_ln = lengths_for_sn.get(original_chrom)
             new_entry = {"SN": new_sn, "LN": new_ln}
             header_dict_sq.append(new_entry)
     

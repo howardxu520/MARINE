@@ -261,6 +261,7 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
         barcode_to_coverage_dict = defaultdict()
         edit_info_file = '{}/edit_info/{}_edit_info.tsv'.format(output_folder, split)
         edit_info_df = pd.read_csv(edit_info_file, sep='\t')
+        edit_info_df['contig'] = edit_info_df['contig'].astype(str)
         edit_info_df['position'] = edit_info_df['position'].astype(int)
         edit_info_df['base_quality'] = edit_info_df['base_quality'].astype(int)
         edit_info_df['mapping_quality'] = edit_info_df['mapping_quality'].astype(int)

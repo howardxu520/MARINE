@@ -144,6 +144,10 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
             alt = reverse_complement(alt)
             ref = reverse_complement(ref)
         
+        if reverse_stranded and not barcode_tag:
+            alt = reverse_complement(alt)
+            ref = reverse_complement(ref)
+        
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
         list_of_rows.append([
