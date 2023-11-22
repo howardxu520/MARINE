@@ -14,7 +14,7 @@ def get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_
 
     subsets_per_contig = defaultdict(lambda:0)
     for bam_index_written in bam_indices_written:
-        contig_label, subset_label = bam_index_written.split('_')
+        contig_label = bam_index_written.split('_')[0]
         subsets_per_contig[contig_label] += 1
 
     if barcode_tag == 'CB':

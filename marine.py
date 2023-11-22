@@ -205,8 +205,8 @@ if __name__ == '__main__':
         bulk_default_ai: False
     }
     
-    default_bam_filepath = bulk_default_ct
-    #default_bam_filepath = sc_subset_ct
+    #default_bam_filepath = bulk_default_ct
+    default_bam_filepath = sc_subset_ct
     
     default_output_folder = '/projects/ps-yeolab3/ekofman/sailor2/scripts/{}'.format(output_names.get(default_bam_filepath))
     
