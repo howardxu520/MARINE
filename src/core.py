@@ -42,7 +42,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     results = []
     
     start_time = time.perf_counter()
-    with multiprocessing.Pool(processes=32) as p:
+    with multiprocessing.Pool(processes=16) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -70,16 +70,22 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
         # Get the bam header, which will be used for each of the split bams too
         header_string = str(samfile.header)
 
-    num_processes = np.max([len(contigs_to_generate_bams_for), 64])
+    num_processes = np.max([len(contigs_to_generate_bams_for), 16])
     
+    total_seconds_for_bams = {0: 1}
+    total_bams = 0
     with get_context("spawn").Pool(processes=num_processes) as p:
         max_ = len(contigs_to_generate_bams_for)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, barcode_tag] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
                 pbar.update()
+                
+                total_bams += 1
+                total_time = time.perf_counter() - start_time
+                total_seconds_for_bams[total_bams] = total_time
 
     total_bam_generation_time = time.perf_counter() - start_time
-    return total_bam_generation_time
+    return total_bam_generation_time, total_seconds_for_bams
 
 
 def incorporate_barcode(read_as_string, contig, barcode):
@@ -218,6 +224,9 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
     
     start_time = time.perf_counter()
 
+    total_seconds_for_contig = {0: 1}
+    total_contigs = 0
+    
     results = []
     # Spawn has to be used instead of the default fork when using the polars library
     with get_context("spawn").Pool(processes=16) as p:
@@ -227,8 +236,12 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
                 pbar.update()
                 results.append(_)
 
+                total_contigs += 1
+                total_time = time.perf_counter() - start_time
+                total_seconds_for_contig[total_contigs] = total_time
+                
     total_time = time.perf_counter() - start_time
-    return results, total_time
+    return results, total_time, total_seconds_for_contig
 
 
 def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB'):

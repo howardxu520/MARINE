@@ -256,6 +256,9 @@ def sort_bam(bam_file_name):
     return output_name
 
 
+def rm_bam(bam_file_name):
+    os.remove(bam_file_name)
+
 def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
     header = pysam.AlignmentHeader.from_text(header_string)
     
@@ -363,6 +366,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             sorted_bam_file_name = sort_bam(bam_file_name)
             print("\tIndexing {}...".format(sorted_bam_file_name))
             index_bam(sorted_bam_file_name)
+            rm_bam(bam_file_name)
         except Exception as e:
             print("Failed at indexing {}".format(bam_file_name))
             
