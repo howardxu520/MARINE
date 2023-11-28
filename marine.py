@@ -200,72 +200,48 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
-    
-    bulk_apo_ctrl_ct = '/home/bay001/projects/codebase/sailor2/tests/scratch/marine_inputs/ApoControl-0_S7_L001_R1_001.fastqTr.sorted.STARUnmapped.out.sorted.STARAligned.out.sorted.bam' 
-    
-    bulk_default_ct = '/projects/ps-yeolab3/ekofman/sailor2/data/Hugo-A1Aligned.sortedByCoord.out.md.bam' # C > T Apobec1 rep1
-    bulk_default_ai = '/projects/ps-yeolab4/ekofman/Hugo/RBFOX2_bams/Hugo-B5Aligned.sortedByCoord.out.bam' # A > I 8e rep1
+        
     sc_subset_ct = '/projects/ps-yeolab3/ekofman/sailor2/data/groups_0_1_2_3_4_5_6_7_8_9_10_11_merged.bam' # C > T Apobec1 sc subset
     sc_whole_ct = '/projects/ps-yeolab5/ekofman/Sammi/MouseBrainEF1A_SingleCell_EPR_batch2/filtered_possorted_ms_hippo_stamp_bam/filtered_keep_xf25_possorted_genome_with_header.bam_MD.bam'
     
     output_names = {
-        bulk_default_ct: 'bulk_CT',
-        bulk_default_ai: 'bulk_AI',
         sc_subset_ct: 'sc_subset_CT',
         sc_whole_ct: 'sc_whole_CT',
-        bulk_apo_ctrl_ct: 'bulk_apo_ctrl_CT'
     }
     
     barcode_tag_dict = {
         sc_subset_ct: "CB",
         sc_whole_ct: "CB",
-        bulk_default_ct: None,
-        bulk_default_ai: None,
-        bulk_apo_ctrl_ct: None
     }
     
     
     reverse_stranded_dict = {
         sc_subset_ct: False,
         sc_whole_ct: False,
-        bulk_default_ct: True,
-        bulk_default_ai: True,
-        bulk_apo_ctrl_ct: True
     }
     
-    #default_bam_filepath = bulk_default_ct
-    #default_bam_filepath = sc_whole_ct
-
-    default_bam_filepath = bulk_apo_ctrl_ct# sc_subset_ct
+    parser.add_argument('--bam_filepath', type=str, default=None)
     
-    default_output_folder = '/projects/ps-yeolab3/ekofman/sailor2/scripts/{}'.format(output_names.get(default_bam_filepath))
+    parser.add_argument('--output_folder', type=str, default=None)
     
-    barcode_tag = barcode_tag_dict.get(default_bam_filepath)
-
-    if default_bam_filepath in [sc_whole_ct, sc_subset_ct]:
-        barcode_whitelist_file = '/projects/ps-yeolab3/ekofman/Sammi/MouseBrainEF1A_SingleCell_EPR_batch2/cellranger/results/ms_hippo_stamp_EIF4A_batch2/outs/filtered_feature_bc_matrix/barcodes.tsv.gz'
-    else:
-        barcode_whitelist_file = None
-    
-    
-    parser.add_argument('--bam_filepath', type=str, default=default_bam_filepath)
-    
-    
-    parser.add_argument('--output_folder', type=str, default=default_output_folder)
-    
-    parser.add_argument('--barcode_whitelist_file', type=str, default=barcode_whitelist_file)
+    parser.add_argument('--barcode_whitelist_file', type=str, default=None)
     
     parser.add_argument('--cores', type=int, default=multiprocessing.cpu_count())
     
+    parser.add_argument('--reverse_stranded', dest='reverse_stranded', action='store_true')
+
     parser.add_argument('--coverage', dest='coverage_only', action='store_true')
+    
+    parser.add_argument('--barcode_tag', type=str, default=None)
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
     output_folder = args.output_folder
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
-    reverse_stranded = reverse_stranded_dict.get(default_bam_filepath)
+    reverse_stranded = args.reverse_stranded
     coverage_only = args.coverage_only
+    barcode_tag = args.barcode_tag
     
     if cores is None:
         cores = 16
