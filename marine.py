@@ -197,6 +197,8 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
     
+    bulk_apo_ctrl_ct = '/home/bay001/projects/codebase/sailor2/tests/scratch/marine_inputs/ApoControl-0_S7_L001_R1_001.fastqTr.sorted.STARUnmapped.out.sorted.STARAligned.out.sorted.bam' 
+    
     bulk_default_ct = '/projects/ps-yeolab3/ekofman/sailor2/data/Hugo-A1Aligned.sortedByCoord.out.md.bam' # C > T Apobec1 rep1
     bulk_default_ai = '/projects/ps-yeolab4/ekofman/Hugo/RBFOX2_bams/Hugo-B5Aligned.sortedByCoord.out.bam' # A > I 8e rep1
     sc_subset_ct = '/projects/ps-yeolab3/ekofman/sailor2/data/groups_0_1_2_3_4_5_6_7_8_9_10_11_merged.bam' # C > T Apobec1 sc subset
@@ -206,14 +208,16 @@ if __name__ == '__main__':
         bulk_default_ct: 'bulk_CT',
         bulk_default_ai: 'bulk_AI',
         sc_subset_ct: 'sc_subset_CT',
-        sc_whole_ct: 'sc_whole_CT'
+        sc_whole_ct: 'sc_whole_CT',
+        bulk_apo_ctrl_ct: 'bulk_apo_ctrl_CT'
     }
     
     barcode_tag_dict = {
         sc_subset_ct: "CB",
         sc_whole_ct: "CB",
         bulk_default_ct: None,
-        bulk_default_ai: None
+        bulk_default_ai: None,
+        bulk_apo_ctrl_ct: None
     }
     
     
@@ -221,13 +225,14 @@ if __name__ == '__main__':
         sc_subset_ct: False,
         sc_whole_ct: False,
         bulk_default_ct: True,
-        bulk_default_ai: True
+        bulk_default_ai: True,
+        bulk_apo_ctrl_ct: True
     }
     
     #default_bam_filepath = bulk_default_ct
     #default_bam_filepath = sc_whole_ct
 
-    default_bam_filepath = sc_subset_ct
+    default_bam_filepath = bulk_apo_ctrl_ct# sc_subset_ct
     
     default_output_folder = '/projects/ps-yeolab3/ekofman/sailor2/scripts/{}'.format(output_names.get(default_bam_filepath))
     
