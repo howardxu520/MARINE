@@ -42,7 +42,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     results = []
     
     start_time = time.perf_counter()
-    with multiprocessing.Pool(processes=32) as p:
+    with multiprocessing.Pool(processes=36) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -70,7 +70,7 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
         # Get the bam header, which will be used for each of the split bams too
         header_string = str(samfile.header)
 
-    num_processes = np.max([len(contigs_to_generate_bams_for), 16])
+    num_processes = np.max([len(contigs_to_generate_bams_for), 32])
     
     total_seconds_for_bams = {0: 1}
     total_bams = 0

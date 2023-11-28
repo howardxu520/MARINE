@@ -67,7 +67,9 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
 def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB'):
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
-    contigs_to_generate_bams_for = get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_bams_folder, barcode_tag=barcode_tag)
+    contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
+                                                                      split_bams_folder, 
+                                                                      barcode_tag=barcode_tag)
     pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
     
     
@@ -111,7 +113,7 @@ def print_marine_logo():
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False):
+def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False):
     min_base_quality = 15
     min_dist_from_end = 5
     
@@ -123,41 +125,43 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     make_folder(logging_folder)
     
     
-    if barcode_whitelist_file:
-        barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
-    else:
-        barcode_whitelist = None
+    if not coverage_only:
+        if barcode_whitelist_file:
+            barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
+        else:
+            barcode_whitelist = None
+
+        # Edit identification
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        pretty_print("Identifying edits", style="~")
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+        overall_label_to_list_of_contents, results, total_seconds_for_reads_df = edit_finder(
+            bam_filepath, 
+            output_folder, 
+            reverse_stranded,
+            barcode_tag,
+            barcode_whitelist,
+            contigs,
+            num_intervals_per_contig,
+            verbose
+        )
+
+        total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
+
+        # Make a subfolder into which the split bams will be placed
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
+        pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag)
+        total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
+        pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+
         
-    # Edit identification
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    pretty_print("Identifying edits", style="~")
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    overall_label_to_list_of_contents, results, total_seconds_for_reads_df = edit_finder(
-        bam_filepath, 
-        output_folder, 
-        reverse_stranded,
-        barcode_tag,
-        barcode_whitelist,
-        contigs,
-        num_intervals_per_contig,
-        verbose
-    )
-    
-    total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-
-    # Make a subfolder into which the split bams will be placed
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
-    pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag)
-    total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
-    
     # Coverage calculation
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
     pretty_print("Calculating coverage at edited sites", style='~')
     
     results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag)
@@ -253,12 +257,15 @@ if __name__ == '__main__':
     
     parser.add_argument('--cores', type=int, default=multiprocessing.cpu_count())
     
+    parser.add_argument('--coverage', dest='coverage_only', action='store_true')
+    
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
     output_folder = args.output_folder
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
     reverse_stranded = reverse_stranded_dict.get(default_bam_filepath)
+    coverage_only = args.coverage_only
     
     if cores is None:
         cores = 16
@@ -270,14 +277,16 @@ if __name__ == '__main__':
                   "\tOutput folder:\t{}".format(output_folder),
                   "\tBarcode whitelist:\t{}".format(barcode_whitelist_file),
                   "\tReverse Stranded:\t{}".format(reverse_stranded),
-                  "\tBarcode Tag:\t{}".format(barcode_tag)
+                  "\tBarcode Tag:\t{}".format(barcode_tag),
+                  "\tCoverage only:\t{}".format(coverage_only)
                  ])
     
     run(bam_filepath, 
         output_folder, 
-        #contigs=['1', '2', '3'],
+        #contigs=['chr1'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=16
+        num_intervals_per_contig=16,
+        coverage_only=coverage_only
        )

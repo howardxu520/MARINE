@@ -9,7 +9,7 @@ import sys
 from collections import OrderedDict, defaultdict
 
 
-def get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_bams_folder, barcode_tag='CB'):
+def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
 
     subsets_per_contig = defaultdict(lambda:0)
@@ -22,7 +22,6 @@ def get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_
     else:
         number_of_expected_bams = 1
         
-    expected_contigs = list(overall_label_to_list_of_contents.keys())
     contigs_to_write_bams_for = []
     for c in expected_contigs:
         num_written_indices = subsets_per_contig.get(c, 0)
