@@ -249,6 +249,7 @@ def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
         job_params.append([edit_info, contig, output_folder, barcode_tag])  
+        
     return job_params
 
     
@@ -285,10 +286,17 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
         if barcode_tag == 'CB':
             suffix_options = ["A-1", "C-1", "G-1", "T-1"]
         elif not barcode_tag:
-            suffix_options = ['no_barcode']
-            
+            # If we are not splitting up contigs by their barcode ending, instead let's do it by length of the contents
+            # (See concat_and_write_bams function)
+            range_for_suffixes = 5
+            suffix_options = range(range_for_suffixes)
+                    
         for suffix in suffix_options:
-            edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
+            if barcode_tag:
+                edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
+            else:
+                edit_info_subset = edit_info.filter(pl.col('contents').str.len_bytes() % range_for_suffixes == suffix)
+                
             edit_info_grouped_per_contig["{}_{}".format(contig, suffix)].append(edit_info_subset)
 
         del edit_info_df

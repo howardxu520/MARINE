@@ -333,16 +333,21 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     # All of the reads for all of the barcodes are in this dataframe
     print("\t{}: concatting".format(contig))
     all_contents_df = pl.concat(sorted_subcontig_dfs)
-        
+            
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
     if barcode_tag:
         suffix_options = ["A-1", "C-1", "G-1", "T-1"]
     else:
-        suffix_options = ['no_barcode']
+        # If we are not splitting up contigs by their barcode ending, instead let's do it by length of the contents
+        range_for_suffixes = 5
+        suffix_options = range(range_for_suffixes)
         
     for suffix in suffix_options:
-        all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
-        
+        if barcode_tag:
+            all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
+        else:
+            all_contents_for_suffix = all_contents_df.filter(pl.col('contents').str.len_bytes() % range_for_suffixes == suffix)
+            
         reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
             pl.concat_str(
                 [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
