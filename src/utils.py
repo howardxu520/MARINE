@@ -189,7 +189,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     print("Contig {}. Loaded bamfile...".format(contig))
     unique_barcodes = sorted(list(edit_info.unique("barcode")["barcode"]))
     
-    coverage_dict = {}
+    coverage_dict = defaultdict(lambda:{})
     
     print("Contig {}. Iterating through barcodes...".format(contig))
     for i, barcode in enumerate(unique_barcodes):
@@ -216,23 +216,31 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
 
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, pos-1, pos, quality_threshold=0))
-                coverage_dict['{}:{}'.format(barcode, pos)] = coverage_at_pos
+                coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
             else:
-                # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19
+                # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
                 
-                coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, pos-1, pos, quality_threshold=0))
-                coverage_dict['{}:{}'.format(contig, pos)] = coverage_at_pos
+                try:
+                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, pos-1, pos, quality_threshold=0))
+                    coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
+                    coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
+
+                except Exception as e:
+                    print("contig {}".format(contig), "Failed to get coverage", e)
             
                 
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
+    
+    #print(coverage_df.head())
+    
     return coverage_df
 
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag = parameters
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag)
-    coverage_df.columns = ['coverage']
+    #coverage_df.columns = ['coverage']
     
     edit_info = edit_info.with_columns(
     pl.concat_str(
@@ -333,20 +341,20 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     # All of the reads for all of the barcodes are in this dataframe
     print("\t{}: concatting".format(contig))
     all_contents_df = pl.concat(sorted_subcontig_dfs)
-            
+                
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
     if barcode_tag:
         suffix_options = ["A-1", "C-1", "G-1", "T-1"]
     else:
         # If we are not splitting up contigs by their barcode ending, instead let's do it by length of the contents
-        range_for_suffixes = 5
-        suffix_options = range(range_for_suffixes)
+        range_for_suffixes = 6
+        suffix_options = range(1, range_for_suffixes)
         
     for suffix in suffix_options:
         if barcode_tag:
             all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
         else:
-            all_contents_for_suffix = all_contents_df.filter(pl.col('contents').str.len_bytes() % range_for_suffixes == suffix)
+            all_contents_for_suffix = all_contents_df.filter(pl.col('bucket') == suffix)
             
         reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
             pl.concat_str(

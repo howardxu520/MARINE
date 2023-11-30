@@ -45,6 +45,8 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
         verbose=verbose
     )
     
+    #print(overall_label_to_list_of_contents.keys())
+    #print(overall_label_to_list_of_contents.get(list(overall_label_to_list_of_contents.keys())[0]))
     
     pretty_print(
         [
@@ -173,6 +175,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         
     pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
     all_edit_info_pd = pd.concat(results)
+    
     all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
     
     # Filtering and site-level information
@@ -184,19 +187,48 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     
     # Convert to polars for faster operations
     all_edit_info = pl.from_pandas(all_edit_info_pd)
-    all_edit_info_filtered = all_edit_info.filter(
-        (pl.col("base_quality") > min_base_quality) & (pl.col("dist_from_end") >= min_dist_from_end))
-    final_site_level_information_df = generate_site_level_information(all_edit_info_filtered)
     
+    # Ensure that we are taking cleaning for only unique edits
+    coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
+    [
+        "position"
+    ]).coverage.max())
+
+    distinguishing_columns = [
+        "barcode",
+        "contig",
+        "position",
+        "ref",
+        "alt",
+        "read_id",
+        "strand",
+        "dist_from_end",
+        "base_quality",
+        "mapping_quality"
+    ]
+    all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
+    
+    all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position']
+    
+    all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
+    all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
+    
+    
+    all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
+        (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
+        (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
+    all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_filtered)
+    
+    final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
 
     pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info)))
     pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
     pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
 
 
-    all_edit_info_filtered.write_csv('{}/filtered_edit_info.tsv'.format(output_folder), 
-                                     separator='\t')
-    final_site_level_information_df.write_csv('{}/site_info.tsv'.format(output_folder), 
+    all_edit_info_filtered.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
+                                     sep='\t')
+    final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                               separator='\t')
 
     pretty_print("Done!", style="+")
@@ -262,7 +294,7 @@ if __name__ == '__main__':
     
     run(bam_filepath, 
         output_folder, 
-        contigs=['1'],
+        contigs=['1', '2', '3'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,

@@ -180,7 +180,8 @@ def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_f
     
     
     
-    
+import random
+
 def find_edits_and_split_bams_wrapper(parameters):
     try:
         start_time = time.perf_counter()
@@ -203,6 +204,10 @@ def find_edits_and_split_bams_wrapper(parameters):
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         if len(barcode_to_concatted_reads) > 0:
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
+            
+            # Add a random integer column for grouping
+            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([random.randint(1, 5) for _ in range(barcode_to_concatted_reads_pl.height)]))
+            
         else:
             # No transposes are allowed on empty dataframes
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads)
@@ -248,6 +253,8 @@ def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
+        print([len(edit_info), contig, output_folder, barcode_tag])
+        
         job_params.append([edit_info, contig, output_folder, barcode_tag])  
         
     return job_params
@@ -270,9 +277,6 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
 
         contig = split.split("_")[0]
 
-        barcode_to_coverage_dict = defaultdict()    
-
-        barcode_to_coverage_dict = defaultdict()
         edit_info_file = '{}/edit_info/{}_edit_info.tsv'.format(output_folder, split)
         edit_info_df = pd.read_csv(edit_info_file, sep='\t')
         edit_info_df['contig'] = edit_info_df['contig'].astype(str)
@@ -286,16 +290,16 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
         if barcode_tag == 'CB':
             suffix_options = ["A-1", "C-1", "G-1", "T-1"]
         elif not barcode_tag:
-            # If we are not splitting up contigs by their barcode ending, instead let's do it by length of the contents
+            # If we are not splitting up contigs by their barcode ending, instead let's do it by the random bucket assigned
             # (See concat_and_write_bams function)
-            range_for_suffixes = 5
-            suffix_options = range(range_for_suffixes)
+            range_for_suffixes = 6
+            suffix_options = range(1, range_for_suffixes)
                     
         for suffix in suffix_options:
             if barcode_tag:
                 edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
             else:
-                edit_info_subset = edit_info.filter(pl.col('contents').str.len_bytes() % range_for_suffixes == suffix)
+                edit_info_subset = edit_info
                 
             edit_info_grouped_per_contig["{}_{}".format(contig, suffix)].append(edit_info_subset)
 
