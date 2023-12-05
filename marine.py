@@ -294,7 +294,7 @@ if __name__ == '__main__':
     
     run(bam_filepath, 
         output_folder, 
-        contigs=['1', '2', '3'],
+        #contigs=['20'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,

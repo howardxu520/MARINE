@@ -8,6 +8,7 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
+BULK_SPLITS = 8
 
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
@@ -20,7 +21,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     if barcode_tag == 'CB':
         number_of_expected_bams = 4
     else:
-        number_of_expected_bams = 1
+        number_of_expected_bams = 5
         
     contigs_to_write_bams_for = []
     for c in expected_contigs:
@@ -217,6 +218,8 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
 
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, pos-1, pos, quality_threshold=0))
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
+                coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
+                
             else:
                 # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
@@ -346,9 +349,9 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     if barcode_tag:
         suffix_options = ["A-1", "C-1", "G-1", "T-1"]
     else:
-        # If we are not splitting up contigs by their barcode ending, instead let's do it by length of the contents
-        range_for_suffixes = 6
-        suffix_options = range(1, range_for_suffixes)
+        # If we are not splitting up contigs by their barcode ending, instead let's do it by random bucket
+        range_for_suffixes = BULK_SPLITS
+        suffix_options = range(0, range_for_suffixes)
         
     for suffix in suffix_options:
         if barcode_tag:
@@ -356,12 +359,31 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
         else:
             all_contents_for_suffix = all_contents_df.filter(pl.col('bucket') == suffix)
             
-        reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
-            pl.concat_str(
-                [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
-                separator="\n"
-                 ).alias("combined_text")
-        )[['combined_text']][1].item().split('\n')))
+            
+        print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                contig,
+                suffix,
+                len(all_contents_df),
+                len(all_contents_for_suffix)
+                ))
+        
+        try:
+            reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
+                pl.concat_str(
+                    [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
+                    separator="\n"
+                     ).alias("combined_text")
+            )[['combined_text']][1].item().split('\n')))
+        except Exception as e:
+            print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                e,
+                contig,
+                suffix,
+                len(all_contents_df),
+                len(all_contents_for_suffix)
+                ))
+            sys.exit(1)
+            
         
         # Make a sub-subfolder to put the bams for this specific contig
         contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
@@ -385,4 +407,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     
 def concat_and_write_bams_wrapper(params):
     contig, df_dict, header_string, split_bams_folder, barcode_tag = params
+    
+    print("df_dict keys: {}".format(df_dict.keys()))
     concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag)

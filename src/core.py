@@ -23,7 +23,7 @@ get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-
+BULK_SPLITS = 8
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
     # Make subfolder in which to information about edits
@@ -202,11 +202,16 @@ def find_edits_and_split_bams_wrapper(parameters):
         )
         counts_df = pd.DataFrame.from_dict(counts)
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
+        
+        print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
+        
         if len(barcode_to_concatted_reads) > 0:
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
             
+            print("\tLength after transpose: {}".format(len(barcode_to_concatted_reads_pl)))
+            print("\tHeight after transpose: {}".format(barcode_to_concatted_reads_pl.height))
             # Add a random integer column for grouping
-            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([random.randint(1, 5) for _ in range(barcode_to_concatted_reads_pl.height)]))
+            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([int(split_index)%BULK_SPLITS for _ in range(barcode_to_concatted_reads_pl.height)]))
             
         else:
             # No transposes are allowed on empty dataframes
@@ -292,7 +297,7 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
         elif not barcode_tag:
             # If we are not splitting up contigs by their barcode ending, instead let's do it by the random bucket assigned
             # (See concat_and_write_bams function)
-            range_for_suffixes = 6
+            range_for_suffixes = BULK_SPLITS
             suffix_options = range(1, range_for_suffixes)
                     
         for suffix in suffix_options:
