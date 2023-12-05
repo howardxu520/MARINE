@@ -8,7 +8,7 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
-BULK_SPLITS = 8
+BULK_SPLITS = 9
 
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
@@ -21,7 +21,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     if barcode_tag == 'CB':
         number_of_expected_bams = 4
     else:
-        number_of_expected_bams = 5
+        number_of_expected_bams = BULK_SPLITS
         
     contigs_to_write_bams_for = []
     for c in expected_contigs:
@@ -375,14 +375,20 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
                      ).alias("combined_text")
             )[['combined_text']][1].item().split('\n')))
         except Exception as e:
-            print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
-                e,
-                contig,
-                suffix,
-                len(all_contents_df),
-                len(all_contents_for_suffix)
-                ))
-            sys.exit(1)
+            reads_count_for_suffix = len(all_contents_for_suffix)
+            
+            if reads_count_for_suffix == 0:
+                print("\tWARNING: No reads found in region {}:{}... assuming this is not an issue, but perhaps worth confirming manually using samtools.".format(contig, suffix))
+                reads_deduped = []
+            else:
+                print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                    e,
+                    contig,
+                    suffix,
+                    len(all_contents_df),
+                    reads_count_for_suffix
+                    ))
+                sys.exit(1)
             
         
         # Make a sub-subfolder to put the bams for this specific contig

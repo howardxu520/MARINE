@@ -92,7 +92,10 @@ def coverage_processing(output_folder, barcode_tag='CB'):
     
     print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
     
-    results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag=barcode_tag)
+    results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
+                                                                            barcode_tag=barcode_tag,
+                                                                            processes=multiprocessing.cpu_count()
+                                                                           )
     
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
     total_seconds_for_contig_df.columns = ['seconds']
@@ -294,7 +297,7 @@ if __name__ == '__main__':
     
     run(bam_filepath, 
         output_folder, 
-        #contigs=['20'],
+        contigs=['1', '2', '3', '4'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,

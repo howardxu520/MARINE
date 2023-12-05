@@ -23,7 +23,7 @@ get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-BULK_SPLITS = 8
+BULK_SPLITS = 9
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
     # Make subfolder in which to information about edits
@@ -111,7 +111,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     read_lists_for_barcodes = defaultdict(lambda:[])
     
     reads_for_contig = samfile.fetch(contig, start, end, multiple_iterators=True)
-    
+        
     output_file = '{}/{}_{}_{}_{}_edit_info.tsv'.format(edit_info_subfolder, contig, split_index, start, end)
     remove_file_if_exists(output_file)
 
@@ -126,12 +126,10 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
 
             barcode = 'no_barcode' if barcode_tag is None else read.get_tag(barcode_tag)
                 
-            if barcode_whitelist and barcode:
+            if barcode_whitelist and barcode != 'no_barcode':
                 if barcode not in barcode_whitelist:
                     counts[contig]['Barcode Filtered'] += 1
                     continue
-
-            verbose = False
             
             try:
                 error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, reverse_stranded=reverse_stranded, barcode_tag=barcode_tag, verbose=verbose)
@@ -201,8 +199,14 @@ def find_edits_and_split_bams_wrapper(parameters):
             verbose=False
         )
         counts_df = pd.DataFrame.from_dict(counts)
+        
+        print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+        
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         
+        # Add a random integer column for grouping
+        bucket_label = int(split_index)%BULK_SPLITS
+        print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
         print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
         
         if len(barcode_to_concatted_reads) > 0:
@@ -210,8 +214,8 @@ def find_edits_and_split_bams_wrapper(parameters):
             
             print("\tLength after transpose: {}".format(len(barcode_to_concatted_reads_pl)))
             print("\tHeight after transpose: {}".format(barcode_to_concatted_reads_pl.height))
-            # Add a random integer column for grouping
-            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([int(split_index)%BULK_SPLITS for _ in range(barcode_to_concatted_reads_pl.height)]))
+            
+            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([bucket_label for _ in range(barcode_to_concatted_reads_pl.height)]))
             
         else:
             # No transposes are allowed on empty dataframes
@@ -225,7 +229,7 @@ def find_edits_and_split_bams_wrapper(parameters):
     
     
     
-def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB'):
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB', processes=16):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
@@ -239,7 +243,7 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
     
     results = []
     # Spawn has to be used instead of the default fork when using the polars library
-    with get_context("spawn").Pool(processes=16) as p:
+    with get_context("spawn").Pool(processes=processes) as p:
         max_ = len(coverage_counting_job_params)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(get_edit_info_for_barcode_in_contig_wrapper, coverage_counting_job_params):
