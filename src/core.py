@@ -23,7 +23,7 @@ get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-BULK_SPLITS = 9
+BULK_SPLITS = 2
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
     # Make subfolder in which to information about edits
@@ -302,7 +302,7 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
             # If we are not splitting up contigs by their barcode ending, instead let's do it by the random bucket assigned
             # (See concat_and_write_bams function)
             range_for_suffixes = BULK_SPLITS
-            suffix_options = range(1, range_for_suffixes)
+            suffix_options = range(0, range_for_suffixes)
                     
         for suffix in suffix_options:
             if barcode_tag:

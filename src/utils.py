@@ -8,7 +8,7 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
-BULK_SPLITS = 9
+BULK_SPLITS = 2
 
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
