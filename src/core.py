@@ -23,7 +23,7 @@ get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-BULK_SPLITS = 2
+BULK_SPLITS = 16
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
     # Make subfolder in which to information about edits
@@ -205,7 +205,7 @@ def find_edits_and_split_bams_wrapper(parameters):
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         
         # Add a random integer column for grouping
-        bucket_label = int(split_index)%BULK_SPLITS
+        bucket_label = int(split_index)#%BULK_SPLITS
         print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
         print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
         
@@ -262,7 +262,8 @@ def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
-        print([len(edit_info), contig, output_folder, barcode_tag])
+            
+        #print([len(edit_info), contig, output_folder, barcode_tag])
         
         job_params.append([edit_info, contig, output_folder, barcode_tag])  
         

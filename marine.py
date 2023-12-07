@@ -121,10 +121,7 @@ def print_marine_logo():
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False):
-    min_base_quality = 15
-    min_dist_from_end = 5
-    
+def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, min_base_quality = 15, min_dist_from_end = 10):
     
     print_marine_logo()
     
@@ -133,7 +130,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     make_folder(logging_folder)
     
     
-    if not coverage_only:
+    if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
             barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
         else:
@@ -168,55 +165,63 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
         
-    # Coverage calculation
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    pretty_print("Calculating coverage at edited sites", style='~')
-    
-    results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag)
-    total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
+    if not filtering_only:
+        # Coverage calculation
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        pretty_print("Calculating coverage at edited sites", style='~')
 
+        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag)
+        total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
+
+
+        pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
+        all_edit_info_pd = pd.concat(results)
+
+        all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+
+        # Filtering and site-level information
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        pretty_print("Filtering and calculating site-level statistics", style="~")
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+        all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
+
+        # Convert to polars for faster operations
+        all_edit_info = pl.from_pandas(all_edit_info_pd)
+
+        # Ensure that we are taking cleaning for only unique edits
+        coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
+        [
+            "position"
+        ]).coverage.max())
+
+        distinguishing_columns = [
+            "barcode",
+            "contig",
+            "position",
+            "ref",
+            "alt",
+            "read_id",
+            "strand",
+            "dist_from_end",
+            "base_quality",
+            "mapping_quality"
+        ]
+        all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
+
+        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position']
+
+        all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
+        all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
+    
+    
+    if filtering_only:
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
         
-    pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
-    all_edit_info_pd = pd.concat(results)
-    
-    all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
-    
-    # Filtering and site-level information
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    pretty_print("Filtering and calculating site-level statistics", style="~")
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
-    all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
-    
-    # Convert to polars for faster operations
-    all_edit_info = pl.from_pandas(all_edit_info_pd)
-    
-    # Ensure that we are taking cleaning for only unique edits
-    coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
-    [
-        "position"
-    ]).coverage.max())
+        
+    pretty_print("Filtering edited sites", style='~')
+    pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
 
-    distinguishing_columns = [
-        "barcode",
-        "contig",
-        "position",
-        "ref",
-        "alt",
-        "read_id",
-        "strand",
-        "dist_from_end",
-        "base_quality",
-        "mapping_quality"
-    ]
-    all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
-    
-    all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position']
-    
-    all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
-    all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
-    
-    
     all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
         (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
         (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
@@ -224,7 +229,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     
     final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
 
-    pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info)))
+    pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
     pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
     pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
 
@@ -269,22 +274,34 @@ if __name__ == '__main__':
     parser.add_argument('--reverse_stranded', dest='reverse_stranded', action='store_true')
 
     parser.add_argument('--coverage', dest='coverage_only', action='store_true')
+    parser.add_argument('--filtering', dest='filtering_only', action='store_true')
     
     parser.add_argument('--barcode_tag', type=str, default=None)
     
+    parser.add_argument('--min_dist_from_end', type=int, default=10)
+
+    parser.add_argument('--min_base_quality', type=int, default=15)
+
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
     output_folder = args.output_folder
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
     reverse_stranded = args.reverse_stranded
+    
     coverage_only = args.coverage_only
+    filtering_only = args.filtering_only
+    
     barcode_tag = args.barcode_tag
+    min_base_quality = args.min_base_quality
+    min_dist_from_end = args.min_dist_from_end
     
     if cores is None:
         cores = 16
     pretty_print("Assuming {} cores available for multiprocessing".format(cores))
    
+    
+    assert(not(coverage_only and filtering_only))
     
     pretty_print(["Arguments:",
                   "\tBAM filepath:\t{}".format(bam_filepath), 
@@ -292,15 +309,21 @@ if __name__ == '__main__':
                   "\tBarcode whitelist:\t{}".format(barcode_whitelist_file),
                   "\tReverse Stranded:\t{}".format(reverse_stranded),
                   "\tBarcode Tag:\t{}".format(barcode_tag),
-                  "\tCoverage only:\t{}".format(coverage_only)
+                  "\tCoverage only:\t{}".format(coverage_only),
+                  "\tFiltering only:\t{}".format(filtering_only),
+                  "\tMinimum base quality:\t{}".format(min_base_quality),
+                  "\tMinimum distance from end:\t{}".format(min_dist_from_end),
                  ])
     
     run(bam_filepath, 
         output_folder, 
-        contigs=['1', '2', '3', '4'],
+        #contigs=['1', '2', '3', '4'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,
         num_intervals_per_contig=16,
-        coverage_only=coverage_only
+        coverage_only=coverage_only,
+        filtering_only=filtering_only,
+        min_base_quality = min_base_quality, 
+        min_dist_from_end = min_dist_from_end
        )

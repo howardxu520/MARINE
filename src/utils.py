@@ -8,7 +8,7 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
-BULK_SPLITS = 2
+BULK_SPLITS = 16
 
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
@@ -178,6 +178,33 @@ def make_folder(folder_path):
     if not os.path.exists(folder_path):
         os.mkdir(folder_path)
 
+def only_keep_positions_for_region(contig, output_folder, positions_for_barcode):
+    contig_index = str(contig.split("_")[-1]).zfill(3)
+    contig_base = contig.split("_")[0]
+    
+    #print("Contig: {}, contig_base: {}, contig_index: {}".format(contig, contig_base, contig_index))
+    
+    edit_info_filepath_regex = "{}/edit_info/{}_{}*".format(output_folder, contig_base, contig_index)
+    #print("edit_info_filepath_regex: {}".format(edit_info_filepath_regex))
+    edit_info_filepath = glob(edit_info_filepath_regex)[0].split('/')[-1]
+    #sys.stderr.write("Contig: {}, edit_info_filepath: {}\n".format(contig, edit_info_filepath))
+    
+    try:
+        second_half_of_filepath = edit_info_filepath.split('_{}_'.format(contig_index))[-1]
+        #print("Contig: {}, second_half_of_filepath: {}".format(contig,second_half_of_filepath))
+        min_pos, max_pos = second_half_of_filepath.split('_edit_info')[0].split('_')
+    
+        min_pos = int(min_pos)
+        max_pos = int(max_pos)
+        #print("Contig: {}. Min pos: {}. Max pos: {}.".format(contig, min_pos, max_pos))
+
+        return [p for p in positions_for_barcode if p > min_pos and p < max_pos]
+
+    except Exception as e:
+        sys.stderr.write('{}, {}, {}, {}, {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath))
+        
+        
+        
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
@@ -199,10 +226,13 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
             
         edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
-        
+                    
         num_positions = len(positions_for_barcode)
         if not barcode_tag:
             print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
+            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
+            num_positions = len(positions_for_barcode)
+            print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
         for i, pos in enumerate(positions_for_barcode):
             
