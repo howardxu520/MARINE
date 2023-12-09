@@ -23,7 +23,7 @@ get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-
+BULK_SPLITS = 16
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
     # Make subfolder in which to information about edits
@@ -42,7 +42,9 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     results = []
     
     start_time = time.perf_counter()
-    with multiprocessing.Pool(processes=32) as p:
+    
+    multiprocessing.set_start_method('spawn')
+    with get_context("spawn").Pool(processes=64) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -70,7 +72,7 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
         # Get the bam header, which will be used for each of the split bams too
         header_string = str(samfile.header)
 
-    num_processes = np.max([len(contigs_to_generate_bams_for), 16])
+    num_processes = np.max([len(contigs_to_generate_bams_for), 32])
     
     total_seconds_for_bams = {0: 1}
     total_bams = 0
@@ -111,7 +113,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     read_lists_for_barcodes = defaultdict(lambda:[])
     
     reads_for_contig = samfile.fetch(contig, start, end, multiple_iterators=True)
-    
+        
     output_file = '{}/{}_{}_{}_{}_edit_info.tsv'.format(edit_info_subfolder, contig, split_index, start, end)
     remove_file_if_exists(output_file)
 
@@ -126,12 +128,10 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
 
             barcode = 'no_barcode' if barcode_tag is None else read.get_tag(barcode_tag)
                 
-            if barcode_whitelist and barcode:
+            if barcode_whitelist and barcode != 'no_barcode':
                 if barcode not in barcode_whitelist:
                     counts[contig]['Barcode Filtered'] += 1
                     continue
-
-            verbose = False
             
             try:
                 error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, reverse_stranded=reverse_stranded, barcode_tag=barcode_tag, verbose=verbose)
@@ -180,7 +180,8 @@ def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_f
     
     
     
-    
+import random
+
 def find_edits_and_split_bams_wrapper(parameters):
     try:
         start_time = time.perf_counter()
@@ -200,9 +201,24 @@ def find_edits_and_split_bams_wrapper(parameters):
             verbose=False
         )
         counts_df = pd.DataFrame.from_dict(counts)
+        
+        print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+        
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
+        
+        # Add a random integer column for grouping
+        bucket_label = int(split_index)#%BULK_SPLITS
+        print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
+        print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
+        
         if len(barcode_to_concatted_reads) > 0:
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
+            
+            print("\tLength after transpose: {}".format(len(barcode_to_concatted_reads_pl)))
+            print("\tHeight after transpose: {}".format(barcode_to_concatted_reads_pl.height))
+            
+            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([bucket_label for _ in range(barcode_to_concatted_reads_pl.height)]))
+            
         else:
             # No transposes are allowed on empty dataframes
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads)
@@ -215,7 +231,7 @@ def find_edits_and_split_bams_wrapper(parameters):
     
     
     
-def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB'):
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB', processes=16):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
@@ -229,7 +245,7 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
     
     results = []
     # Spawn has to be used instead of the default fork when using the polars library
-    with get_context("spawn").Pool(processes=16) as p:
+    with get_context("spawn").Pool(processes=processes) as p:
         max_ = len(coverage_counting_job_params)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(get_edit_info_for_barcode_in_contig_wrapper, coverage_counting_job_params):
@@ -248,7 +264,11 @@ def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
+            
+        #print([len(edit_info), contig, output_folder, barcode_tag])
+        
         job_params.append([edit_info, contig, output_folder, barcode_tag])  
+        
     return job_params
 
     
@@ -269,9 +289,6 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
 
         contig = split.split("_")[0]
 
-        barcode_to_coverage_dict = defaultdict()    
-
-        barcode_to_coverage_dict = defaultdict()
         edit_info_file = '{}/edit_info/{}_edit_info.tsv'.format(output_folder, split)
         edit_info_df = pd.read_csv(edit_info_file, sep='\t')
         edit_info_df['contig'] = edit_info_df['contig'].astype(str)
@@ -285,10 +302,17 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
         if barcode_tag == 'CB':
             suffix_options = ["A-1", "C-1", "G-1", "T-1"]
         elif not barcode_tag:
-            suffix_options = ['no_barcode']
-            
+            # If we are not splitting up contigs by their barcode ending, instead let's do it by the random bucket assigned
+            # (See concat_and_write_bams function)
+            range_for_suffixes = BULK_SPLITS
+            suffix_options = range(0, range_for_suffixes)
+                    
         for suffix in suffix_options:
-            edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
+            if barcode_tag:
+                edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
+            else:
+                edit_info_subset = edit_info
+                
             edit_info_grouped_per_contig["{}_{}".format(contig, suffix)].append(edit_info_subset)
 
         del edit_info_df

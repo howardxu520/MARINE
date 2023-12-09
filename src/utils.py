@@ -8,8 +8,9 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
+BULK_SPLITS = 16
 
-def get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_bams_folder, barcode_tag='CB'):
+def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
 
     subsets_per_contig = defaultdict(lambda:0)
@@ -20,9 +21,8 @@ def get_contigs_that_need_bams_written(overall_label_to_list_of_contents, split_
     if barcode_tag == 'CB':
         number_of_expected_bams = 4
     else:
-        number_of_expected_bams = 1
+        number_of_expected_bams = BULK_SPLITS
         
-    expected_contigs = list(overall_label_to_list_of_contents.keys())
     contigs_to_write_bams_for = []
     for c in expected_contigs:
         num_written_indices = subsets_per_contig.get(c, 0)
@@ -178,6 +178,33 @@ def make_folder(folder_path):
     if not os.path.exists(folder_path):
         os.mkdir(folder_path)
 
+def only_keep_positions_for_region(contig, output_folder, positions_for_barcode):
+    contig_index = str(contig.split("_")[-1]).zfill(3)
+    contig_base = contig.split("_")[0]
+    
+    #print("Contig: {}, contig_base: {}, contig_index: {}".format(contig, contig_base, contig_index))
+    
+    edit_info_filepath_regex = "{}/edit_info/{}_{}*".format(output_folder, contig_base, contig_index)
+    #print("edit_info_filepath_regex: {}".format(edit_info_filepath_regex))
+    edit_info_filepath = glob(edit_info_filepath_regex)[0].split('/')[-1]
+    #sys.stderr.write("Contig: {}, edit_info_filepath: {}\n".format(contig, edit_info_filepath))
+    
+    try:
+        second_half_of_filepath = edit_info_filepath.split('_{}_'.format(contig_index))[-1]
+        #print("Contig: {}, second_half_of_filepath: {}".format(contig,second_half_of_filepath))
+        min_pos, max_pos = second_half_of_filepath.split('_edit_info')[0].split('_')
+    
+        min_pos = int(min_pos)
+        max_pos = int(max_pos)
+        #print("Contig: {}. Min pos: {}. Max pos: {}.".format(contig, min_pos, max_pos))
+
+        return [p for p in positions_for_barcode if p > min_pos and p < max_pos]
+
+    except Exception as e:
+        sys.stderr.write('{}, {}, {}, {}, {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath))
+        
+        
+        
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
@@ -190,7 +217,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     print("Contig {}. Loaded bamfile...".format(contig))
     unique_barcodes = sorted(list(edit_info.unique("barcode")["barcode"]))
     
-    coverage_dict = {}
+    coverage_dict = defaultdict(lambda:{})
     
     print("Contig {}. Iterating through barcodes...".format(contig))
     for i, barcode in enumerate(unique_barcodes):
@@ -199,10 +226,13 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
             
         edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
-        
+                    
         num_positions = len(positions_for_barcode)
         if not barcode_tag:
             print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
+            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
+            num_positions = len(positions_for_barcode)
+            print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
         for i, pos in enumerate(positions_for_barcode):
             
@@ -217,23 +247,33 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
 
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, pos-1, pos, quality_threshold=0))
-                coverage_dict['{}:{}'.format(barcode, pos)] = coverage_at_pos
+                coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
+                coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
+                
             else:
-                # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19
+                # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
                 
-                coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, pos-1, pos, quality_threshold=0))
-                coverage_dict['{}:{}'.format(contig, pos)] = coverage_at_pos
+                try:
+                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, pos-1, pos, quality_threshold=0))
+                    coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
+                    coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
+
+                except Exception as e:
+                    print("contig {}".format(contig), "Failed to get coverage", e)
             
                 
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
+    
+    #print(coverage_df.head())
+    
     return coverage_df
 
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag = parameters
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag)
-    coverage_df.columns = ['coverage']
+    #coverage_df.columns = ['coverage']
     
     edit_info = edit_info.with_columns(
     pl.concat_str(
@@ -334,22 +374,52 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     # All of the reads for all of the barcodes are in this dataframe
     print("\t{}: concatting".format(contig))
     all_contents_df = pl.concat(sorted_subcontig_dfs)
-        
+                
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
     if barcode_tag:
         suffix_options = ["A-1", "C-1", "G-1", "T-1"]
     else:
-        suffix_options = ['no_barcode']
+        # If we are not splitting up contigs by their barcode ending, instead let's do it by random bucket
+        range_for_suffixes = BULK_SPLITS
+        suffix_options = range(0, range_for_suffixes)
         
     for suffix in suffix_options:
-        all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
+        if barcode_tag:
+            all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
+        else:
+            all_contents_for_suffix = all_contents_df.filter(pl.col('bucket') == suffix)
+            
+            
+        print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                contig,
+                suffix,
+                len(all_contents_df),
+                len(all_contents_for_suffix)
+                ))
         
-        reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
-            pl.concat_str(
-                [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
-                separator="\n"
-                 ).alias("combined_text")
-        )[['combined_text']][1].item().split('\n')))
+        try:
+            reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
+                pl.concat_str(
+                    [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
+                    separator="\n"
+                     ).alias("combined_text")
+            )[['combined_text']][1].item().split('\n')))
+        except Exception as e:
+            reads_count_for_suffix = len(all_contents_for_suffix)
+            
+            if reads_count_for_suffix == 0:
+                print("\tWARNING: No reads found in region {}:{}... assuming this is not an issue, but perhaps worth confirming manually using samtools.".format(contig, suffix))
+                reads_deduped = []
+            else:
+                print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                    e,
+                    contig,
+                    suffix,
+                    len(all_contents_df),
+                    reads_count_for_suffix
+                    ))
+                sys.exit(1)
+            
         
         # Make a sub-subfolder to put the bams for this specific contig
         contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
@@ -373,4 +443,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     
 def concat_and_write_bams_wrapper(params):
     contig, df_dict, header_string, split_bams_folder, barcode_tag = params
+    
+    print("df_dict keys: {}".format(df_dict.keys()))
     concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag)

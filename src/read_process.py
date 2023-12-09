@@ -138,6 +138,9 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     
     list_of_rows = []
     for alt, ref, qual, pos in zip(alt_bases, ref_bases, qualities, positions_replaced):
+        if alt == "N" or ref == "N":
+            continue
+            
         assert(alt != ref)
         updated_position = pos+reference_start
         if is_reverse:
