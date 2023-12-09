@@ -42,7 +42,9 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     results = []
     
     start_time = time.perf_counter()
-    with multiprocessing.Pool(processes=36) as p:
+    
+    multiprocessing.set_start_method('spawn')
+    with get_context("spawn").Pool(processes=64) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
