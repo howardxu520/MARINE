@@ -29,7 +29,7 @@ gather_edit_information_across_subcontigs, run_coverage_calculator, generate_sit
         
     
 def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
-                verbose=False):
+                verbose=False, cores=64):
     
     pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
     
@@ -42,7 +42,8 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
         barcode_whitelist=barcode_whitelist,
         contigs=contigs,
         num_intervals_per_contig=num_intervals_per_contig, 
-        verbose=verbose
+        verbose=verbose,
+        cores=cores,
     )
     
     #print(overall_label_to_list_of_contents.keys())
@@ -121,7 +122,7 @@ def print_marine_logo():
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, min_base_quality = 15, min_dist_from_end = 10):
+def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
     
     print_marine_logo()
     
@@ -149,7 +150,8 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
             barcode_whitelist,
             contigs,
             num_intervals_per_contig,
-            verbose
+            verbose,
+            cores=cores
         )
 
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
@@ -313,11 +315,12 @@ if __name__ == '__main__':
                   "\tFiltering only:\t{}".format(filtering_only),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
+                  "\tCores:\t{}".format(cores),
                  ])
     
     run(bam_filepath, 
         output_folder, 
-        #contigs=['1', '2', '3', '4'],
+        #contigs=['1', '2', '3'],
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,
@@ -325,5 +328,6 @@ if __name__ == '__main__':
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         min_base_quality = min_base_quality, 
-        min_dist_from_end = min_dist_from_end
+        min_dist_from_end = min_dist_from_end,
+        cores = cores
        )

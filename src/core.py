@@ -25,7 +25,7 @@ import os, psutil
 
 BULK_SPLITS = 16
 
-def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
+def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64):
     # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
     make_folder(edit_info_subfolder)
@@ -44,7 +44,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     start_time = time.perf_counter()
     
     multiprocessing.set_start_method('spawn')
-    with get_context("spawn").Pool(processes=64) as p:
+    with get_context("spawn").Pool(processes=cores) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -202,20 +202,24 @@ def find_edits_and_split_bams_wrapper(parameters):
         )
         counts_df = pd.DataFrame.from_dict(counts)
         
-        print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+        if verbose:
+            print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
         
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         
         # Add a random integer column for grouping
         bucket_label = int(split_index)#%BULK_SPLITS
-        print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
-        print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
+        
+        if verbose:
+            print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
+            print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
         
         if len(barcode_to_concatted_reads) > 0:
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
             
-            print("\tLength after transpose: {}".format(len(barcode_to_concatted_reads_pl)))
-            print("\tHeight after transpose: {}".format(barcode_to_concatted_reads_pl.height))
+            if verbose:
+                print("\tLength after transpose: {}".format(len(barcode_to_concatted_reads_pl)))
+                print("\tHeight after transpose: {}".format(barcode_to_concatted_reads_pl.height))
             
             barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([bucket_label for _ in range(barcode_to_concatted_reads_pl.height)]))
             

@@ -222,23 +222,25 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     print("Contig {}. Iterating through barcodes...".format(contig))
     for i, barcode in enumerate(unique_barcodes):
         if i % 300 == 0:
-            print("{}/{} barcodes for {}...".format(i+1, len(unique_barcodes), contig))
+            #print("{}/{} barcodes for {}...".format(i+1, len(unique_barcodes), contig))
+            pass
             
         edit_info_for_barcode = edit_info.filter(pl.col("barcode") == barcode)
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
                     
         num_positions = len(positions_for_barcode)
         if not barcode_tag:
-            print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
+            #print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
             positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
             num_positions = len(positions_for_barcode)
-            print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
+            #print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
         for i, pos in enumerate(positions_for_barcode):
             
             if not barcode_tag:
                 if i%10000 == 0:
-                    print("\t{}:\tCoverage computed at {}/{} positions...".format(contig, i, num_positions))
+                    pass
+                    #print("\t{}:\tCoverage computed at {}/{} positions...".format(contig, i, num_positions))
             
             if barcode_tag:
                 barcode_specific_contig = '{}_{}'.format(contig, barcode)
