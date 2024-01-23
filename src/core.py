@@ -65,14 +65,15 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
 
 
 
-def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB'):
+def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1):
     start_time = time.perf_counter()
 
     with pysam.AlignmentFile(bampath, "rb") as samfile:
         # Get the bam header, which will be used for each of the split bams too
         header_string = str(samfile.header)
 
-    num_processes = np.max([len(contigs_to_generate_bams_for), 32])
+    # num_processes = np.max([len(contigs_to_generate_bams_for), 32])
+    num_processes = cores
     
     total_seconds_for_bams = {0: 1}
     total_bams = 0
@@ -195,7 +196,7 @@ def find_edits_and_split_bams_wrapper(parameters):
             start, 
             end,                                                           
             output_folder, 
-            reverse_stranded=True,
+            reverse_stranded,
             barcode_tag=barcode_tag,
             barcode_whitelist=barcode_whitelist,
             verbose=False
@@ -286,7 +287,7 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
     edit_info_grouped_per_contig_combined = defaultdict(lambda:[])
 
     num_splits = len(splits)
-    print("Grouping edit information outputs by contig...")
+    # print("Grouping edit information outputs by contig...")
     for i, split in enumerate(splits):
         if i%10 == 0:
             print("\t{}/{}...".format(i, num_splits))

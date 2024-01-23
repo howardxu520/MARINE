@@ -67,7 +67,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df
 
 
-def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB'):
+def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1):
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
@@ -77,7 +77,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     # BAM Generation
-    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag)
+    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores)
     
     total_seconds_for_bams_df = pd.DataFrame.from_dict(total_seconds_for_bams, orient='index')
     total_seconds_for_bams_df.columns = ['seconds']
@@ -88,14 +88,14 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     
-def coverage_processing(output_folder, barcode_tag='CB'):
+def coverage_processing(output_folder, barcode_tag='CB', cores=1):
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, barcode_tag=barcode_tag)
     
     print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
     
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
                                                                             barcode_tag=barcode_tag,
-                                                                            processes=multiprocessing.cpu_count()
+                                                                            processes=cores
                                                                            )
     
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
@@ -162,7 +162,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag)
+        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores)
         total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
         pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
@@ -172,7 +172,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites", style='~')
 
-        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag)
+        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag, cores=cores)
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
 
