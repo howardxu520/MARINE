@@ -38,12 +38,10 @@ def make_edit_finding_jobs(bampath, output_folder, reverse_stranded=True, barcod
     
     samfile = pysam.AlignmentFile(bampath, "rb")
     contig_lengths_dict = get_contig_lengths_dict(samfile)
-    
     if len(contigs) == 0:
         contigs_to_use = set(contig_lengths_dict.keys())
     else:
         contigs_to_use = set(contigs)
-        
     for contig in contig_lengths_dict.keys():
         # Skip useless contigs
         if len(contig) > 5 or contig == 'Stamp':# or contig != '17':
@@ -210,16 +208,17 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
     contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
 
-    print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
-    index_bam(contig_bam)
-    samfile_for_barcode = pysam.AlignmentFile(contig_bam, "rb")
-
-    print("Contig {}. Loaded bamfile...".format(contig))
+    # print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
+    try:
+        index_bam(contig_bam)
+        samfile_for_barcode = pysam.AlignmentFile(contig_bam, "rb")
+    except OSError:  # If MARINE cannot find a bam to index, return empty
+        return pd.DataFrame(columns=['coverage', 'source'])
+    # print("Contig {}. Loaded bamfile...".format(contig))
     unique_barcodes = sorted(list(edit_info.unique("barcode")["barcode"]))
-    
     coverage_dict = defaultdict(lambda:{})
     
-    print("Contig {}. Iterating through barcodes...".format(contig))
+    # print("Contig {}. Iterating through barcodes...".format(contig))
     for i, barcode in enumerate(unique_barcodes):
         if i % 300 == 0:
             #print("{}/{} barcodes for {}...".format(i+1, len(unique_barcodes), contig))
@@ -263,11 +262,9 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
 
                 except Exception as e:
                     print("contig {}".format(contig), "Failed to get coverage", e)
-            
+                    return pd.DataFrame(columns=['coverage', 'source'])  # Should we just return empty? Or why would there be an exception here?
                 
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
-    
-    #print(coverage_df.head())
     
     return coverage_df
 
@@ -288,7 +285,6 @@ def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     
     edit_info_df = edit_info.to_pandas()
     edit_info_df.index = edit_info_df['barcode_position']
-        
     return edit_info_df.join(coverage_df)
 
 
@@ -313,10 +309,10 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
         ln = s.get("LN")
         lengths_for_sn[sn] = ln
         
-    print("\tCurrent header length for {}: {}".format(bam_file_name, len(lengths_for_sn)))
+    # print("\tCurrent header length for {}: {}".format(bam_file_name, len(lengths_for_sn)))
     
     all_barcodes_for_contig = set([r.split('\t')[2] for r in reads])
-    print("\tNum barcodes for {}: {}".format(bam_file_name, len(all_barcodes_for_contig)))
+    # print("\tNum barcodes for {}: {}".format(bam_file_name, len(all_barcodes_for_contig)))
         
     for new_sn in all_barcodes_for_contig:
         original_chrom = new_sn.split("_")[0]
@@ -331,7 +327,7 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
     #print("\tExample new entries: {}".format(header_dict_sq[-4:]))
     header_dict['SQ'] = header_dict_sq
     
-    print("\tNew header length: {}".format(len(header_dict.get("SQ"))))
+    # print("\tNew header length: {}".format(len(header_dict.get("SQ"))))
     
     new_header = pysam.AlignmentHeader.from_dict(header_dict)
     
@@ -434,9 +430,9 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
         # Write, sort and index bam immediately
         write_reads_to_file(reads_deduped, bam_file_name, header_string)
         try:
-            print("\tSorting {}...".format(bam_file_name))
+            # print("\tSorting {}...".format(bam_file_name))
             sorted_bam_file_name = sort_bam(bam_file_name)
-            print("\tIndexing {}...".format(sorted_bam_file_name))
+            # print("\tIndexing {}...".format(sorted_bam_file_name))
             index_bam(sorted_bam_file_name)
             rm_bam(bam_file_name)
         except Exception as e:
@@ -446,5 +442,5 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
 def concat_and_write_bams_wrapper(params):
     contig, df_dict, header_string, split_bams_folder, barcode_tag = params
     
-    print("df_dict keys: {}".format(df_dict.keys()))
+    # print("df_dict keys: {}".format(df_dict.keys()))
     concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag)
