@@ -76,7 +76,7 @@ def has_edits(read):
         print("It seems like there is an MD tag missing", e)
         
     if ('G' in md_tag or 'A' in md_tag or 'T' in md_tag or 'C' in md_tag):
-        # No edits present in this read, based on MD tag contents
+        # Edits present in this read, based on MD tag contents
         return True
 
 def get_total_coverage_for_contig_at_position(r, coverage_dict):
