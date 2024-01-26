@@ -345,7 +345,10 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
         print("Hamming distance: {}".format(hamming_distance))
         assert(hamming_distance == len(alt_bases))
 
-    return alt_bases, ref_bases, qualities, global_positions_replaced
+    # Make positions 1-based instead of 0-based
+    global_positions_replaced_1based = [g+1 for g in global_positions_replaced]
+    
+    return alt_bases, ref_bases, qualities, global_positions_replaced_1based
     
     
 def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=False):
