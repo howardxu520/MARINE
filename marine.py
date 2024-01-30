@@ -6,6 +6,7 @@ import pandas as pd
 import polars as pl
 import psutil
 import pysam
+from scipy.special import betainc
 import sys
 from sys import getsizeof
 import time
@@ -120,16 +121,56 @@ def print_marine_logo():
         
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
+def calculate_sailor_score(sailor_row):
+    edits = sailor_row['count']
+    num_reads = sailor_row['coverage']
+    original_base_counts = num_reads - edits
+    
+    cov_margin = 0.01
+    alpha, beta = 0, 0
+
+    num_failures = 0
+    failure_messages = []
+    try:
+        edit_frac = float(edits) / float(num_reads)
+    except Exception as e:
+        num_failures += 1
+        print("Bad Row: {}".format(sailor_row))
+        return None
+        
+    # calc smoothed counts and confidence
+    destination_base_smoothed = edits + alpha
+    origin_base_smoothed = original_base_counts + beta
+
+    ########  MOST IMPORTANT LINE  ########
+    # calculates the confidence of theta as
+    # P( theta < cov_margin | A, G) ~ Beta_theta(G, A)
+    confidence = 1 - betainc(destination_base_smoothed, origin_base_smoothed, cov_margin)
+    return confidence
+    
 
 def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
     final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['conversion'] == conversion]
     final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + final_site_level_information_df['coverage'].astype(str)
-    final_site_level_information_df['score'] = 'Scores'
+
+    weird_sites = final_site_level_information_df[
+            (final_site_level_information_df.coverage == 0) |\
+            (final_site_level_information_df.coverage < final_site_level_information_df['count'])]
+    
+    print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
+        len(weird_sites)))
+          
+    final_site_level_information_df = final_site_level_information_df[
+    (final_site_level_information_df.coverage > 0) & \
+    (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
+    ]
+    
+    final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
     final_site_level_information_df['start'] = final_site_level_information_df['position']
     final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
     
     final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
-    return final_site_level_information_df
+    return final_site_level_information_df, weird_sites
     
 def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
     
@@ -275,9 +316,17 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         # 1       629309  629310  2.8306e-05      1,1043  +
 
         conversion = 'C>T'
-        sailor_sites = get_sailor_sites(final_site_level_information_df, conversion)
-        sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(output_folder, conversion.replace(">", "-")), sep='\t')
-    
+        sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion)
+        sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+            output_folder, 
+            conversion.replace(">", "-")), 
+            header=False,
+            index=False,       
+            sep='\t')
+        weird_sites.to_csv('{}/problematic_sites_{}.tsv'.format(
+            output_folder, 
+            conversion.replace(">", "-")), 
+            sep='\t')
                                          
     pretty_print("Done!", style="+")
     
