@@ -90,14 +90,26 @@ def print_read_info(read):
     md_tag = read.get_tag('MD')
     read_id = read.query_name
     cigar_string = read.cigarstring
-    barcode = read.get_tag('CB', None)
+
+    if read.has_tag('CB'):
+        barcode = read.get_tag('CB')
+        
     print('MD tag', md_tag)
     print("CIGAR tag", cigar_string)
     print('barcode', barcode)
     
     
 def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True):
-    read_barcode = 'no_barcode' if barcode_tag is None else read.get_tag(barcode_tag)
+    if barcode_tag is None:
+        read_barcode = 'no_barcode'
+    elif read.has_tag(barcode_tag):
+        read_barcode = read.get_tag(barcode_tag)
+    else:
+        read_barcode = None
+        
+    if not read_barcode:
+        return 'no_{}_tag'.format(barcode_tag), [], {}
+        
     is_reverse = read.is_reverse
         
     reference_start = read.reference_start
