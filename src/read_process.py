@@ -109,7 +109,9 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
         
     if not read_barcode:
         return 'no_{}_tag'.format(barcode_tag), [], {}
-        
+
+    print("Flag", read.flag)
+    
     is_reverse = read.is_reverse
         
     reference_start = read.reference_start
@@ -126,10 +128,24 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
         return 'no_edits', [], {}
-    
+
+    # Defaults for coverage counting as well 
+    # count_coverage function at: https://pysam.readthedocs.io/en/v0.16.0.1/api.html
     if read.is_secondary:
         return 'secondary', [], {}
-       
+
+    if read.is_unmapped:
+        return 'is_unmapped', [], {}
+
+    if read.is_qcfail:
+        return 'is_qcfail', [], {}
+
+    if raed.is_dup:
+        return 'is_dup', [], {}
+        
+    
+    BAM_FUNMAP, BAM_FSECONDARY, BAM_FQCFAIL, BAM_FDUP
+    
     #if 'N' in cigarstring:
     #    return 'N', [], {}
     
