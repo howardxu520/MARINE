@@ -76,7 +76,7 @@ def has_edits(read):
         print("It seems like there is an MD tag missing", e)
         
     if ('G' in md_tag or 'A' in md_tag or 'T' in md_tag or 'C' in md_tag):
-        # No edits present in this read, based on MD tag contents
+        # Edits present in this read, based on MD tag contents
         return True
 
 def get_total_coverage_for_contig_at_position(r, coverage_dict):
@@ -90,14 +90,26 @@ def print_read_info(read):
     md_tag = read.get_tag('MD')
     read_id = read.query_name
     cigar_string = read.cigarstring
-    barcode = read.get_tag('CB', None)
+
+    if read.has_tag('CB'):
+        barcode = read.get_tag('CB')
+        
     print('MD tag', md_tag)
     print("CIGAR tag", cigar_string)
     print('barcode', barcode)
     
     
 def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True):
-    read_barcode = 'no_barcode' if barcode_tag is None else read.get_tag(barcode_tag)
+    if barcode_tag is None:
+        read_barcode = 'no_barcode'
+    elif read.has_tag(barcode_tag):
+        read_barcode = read.get_tag(barcode_tag)
+    else:
+        read_barcode = None
+        
+    if not read_barcode:
+        return 'no_{}_tag'.format(barcode_tag), [], {}
+    
     is_reverse = read.is_reverse
         
     reference_start = read.reference_start
@@ -114,10 +126,22 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
         return 'no_edits', [], {}
-    
+
+    # Defaults for coverage counting as well 
+    # count_coverage function at: https://pysam.readthedocs.io/en/v0.16.0.1/api.html
     if read.is_secondary:
         return 'secondary', [], {}
-       
+
+    if read.is_unmapped:
+        return 'is_unmapped', [], {}
+
+    if read.is_qcfail:
+        return 'is_qcfail', [], {}
+
+    if read.is_dup:
+        return 'is_dup', [], {}
+
+    
     #if 'N' in cigarstring:
     #    return 'N', [], {}
     

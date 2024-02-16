@@ -1,12 +1,12 @@
 import argparse
 from multiprocessing import Pool
 import multiprocessing
-import numpy as np
 import os
 import pandas as pd
 import polars as pl
 import psutil
 import pysam
+from scipy.special import betainc
 import sys
 from sys import getsizeof
 import time
@@ -121,8 +121,58 @@ def print_marine_logo():
         
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
+def calculate_sailor_score(sailor_row):
+    edits = sailor_row['count']
+    num_reads = sailor_row['coverage']
+    original_base_counts = num_reads - edits
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
+    cov_margin = 0.01
+    alpha, beta = 0, 0
+
+    num_failures = 0
+    failure_messages = []
+    try:
+        edit_frac = float(edits) / float(num_reads)
+    except Exception as e:
+        num_failures += 1
+        print("Bad Row: {}".format(sailor_row))
+        return None
+        
+    # calc smoothed counts and confidence
+    destination_base_smoothed = edits + alpha
+    origin_base_smoothed = original_base_counts + beta
+
+    ########  MOST IMPORTANT LINE  ########
+    # calculates the confidence of theta as
+    # P( theta < cov_margin | A, G) ~ Beta_theta(G, A)
+    confidence = 1 - betainc(destination_base_smoothed, origin_base_smoothed, cov_margin)
+    return confidence
+    
+
+def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
+    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['conversion'] == conversion]
+    final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + final_site_level_information_df['coverage'].astype(str)
+
+    weird_sites = final_site_level_information_df[
+            (final_site_level_information_df.coverage == 0) |\
+            (final_site_level_information_df.coverage < final_site_level_information_df['count'])]
+    
+    print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
+        len(weird_sites)))
+          
+    final_site_level_information_df = final_site_level_information_df[
+    (final_site_level_information_df.coverage > 0) & \
+    (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
+    ]
+    
+    final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
+    final_site_level_information_df['start'] = final_site_level_information_df['position']
+    final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
+    
+    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
+    return final_site_level_information_df, weird_sites
+    
+def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
     
     print_marine_logo()
     
@@ -179,7 +229,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
         all_edit_info_pd = pd.concat(results)
 
-        all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+        #all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
 
         # Filtering and site-level information
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -216,55 +266,73 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
     
-    
-    if filtering_only:
-        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+
+    # Check if filtering step finished
+    final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
+    final_path_already_exists = False
+    if os.path.exists(final_filtered_sites_path):
+        print("{} exists...".format(final_filtered_sites_path))
+        final_path_already_exists = True
+
+    # Filtering steps
+    if not final_path_already_exists:
+        print("Filtering..")
         
-        
-    pretty_print("Filtering edited sites", style='~')
-    pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
-
-    all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-        (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
-        (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
-    all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_filtered)
+        if filtering_only:
+            all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+            
+            
+        pretty_print("Filtering edited sites", style='~')
+        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
     
-    final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
+        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
+            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
+            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
+        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_filtered)
+        
+        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
+    
+        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
+        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
+        pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
+    
+    
+        all_edit_info_filtered.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
+                                         sep='\t')
+        final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  separator='\t')
+        final_path_already_exists = True
+        
+            
+    if final_path_already_exists:
+        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
+        if sailor:
+            print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
 
-    pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-    pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
-    pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
+        # Output SAILOR-formatted file for use in FLARE downstream
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # 1       629275  629276  0.966040688     2,30    +
+        # 1       629309  629310  2.8306e-05      1,1043  +
 
-
-    all_edit_info_filtered.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                     sep='\t')
-    final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
-                                              separator='\t')
-
+        conversion = 'C>T'
+        sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion)
+        sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+            output_folder, 
+            conversion.replace(">", "-")), 
+            header=False,
+            index=False,       
+            sep='\t')
+        weird_sites.to_csv('{}/problematic_sites_{}.tsv'.format(
+            output_folder, 
+            conversion.replace(">", "-")), 
+            sep='\t')
+                                         
     pretty_print("Done!", style="+")
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
-        
-    sc_subset_ct = '/projects/ps-yeolab3/ekofman/sailor2/data/groups_0_1_2_3_4_5_6_7_8_9_10_11_merged.bam' # C > T Apobec1 sc subset
-    sc_whole_ct = '/projects/ps-yeolab5/ekofman/Sammi/MouseBrainEF1A_SingleCell_EPR_batch2/filtered_possorted_ms_hippo_stamp_bam/filtered_keep_xf25_possorted_genome_with_header.bam_MD.bam'
-    
-    output_names = {
-        sc_subset_ct: 'sc_subset_CT',
-        sc_whole_ct: 'sc_whole_CT',
-    }
-    
-    barcode_tag_dict = {
-        sc_subset_ct: "CB",
-        sc_whole_ct: "CB",
-    }
-    
-    
-    reverse_stranded_dict = {
-        sc_subset_ct: False,
-        sc_whole_ct: False,
-    }
-    
+            
     parser.add_argument('--bam_filepath', type=str, default=None)
     
     parser.add_argument('--output_folder', type=str, default=None)
@@ -284,6 +352,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--min_base_quality', type=int, default=15)
 
+    parser.add_argument('--sailor', dest='sailor', action='store_true')
+                        
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
     output_folder = args.output_folder
@@ -293,6 +363,7 @@ if __name__ == '__main__':
     
     coverage_only = args.coverage_only
     filtering_only = args.filtering_only
+    sailor = args.sailor
     
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
@@ -313,6 +384,7 @@ if __name__ == '__main__':
                   "\tBarcode Tag:\t{}".format(barcode_tag),
                   "\tCoverage only:\t{}".format(coverage_only),
                   "\tFiltering only:\t{}".format(filtering_only),
+                  "\tSailor outputs:\t{}".format(sailor),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
                   "\tCores:\t{}".format(cores),
@@ -327,6 +399,7 @@ if __name__ == '__main__':
         num_intervals_per_contig=16,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
+        sailor=sailor,
         min_base_quality = min_base_quality, 
         min_dist_from_end = min_dist_from_end,
         cores = cores

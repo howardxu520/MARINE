@@ -127,7 +127,12 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
             if total_reads % 1000 == 0:
                 time_reporting[total_reads] = time.perf_counter() - start_time
 
-            barcode = 'no_barcode' if barcode_tag is None else read.get_tag(barcode_tag)
+            if barcode_tag is None:
+                barcode = 'no_barcode'
+            elif read.has_tag(barcode_tag):
+                barcode = read.get_tag(barcode_tag)
+            else:
+                barcode = 'missing'
                 
             if barcode_whitelist and barcode != 'no_barcode':
                 if barcode not in barcode_whitelist:

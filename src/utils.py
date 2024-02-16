@@ -201,7 +201,8 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
     except Exception as e:
         sys.stderr.write('{}, {}, {}, {}, {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath))
         
-        
+def check_read(read):
+    return True
         
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
     
@@ -247,7 +248,13 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
                 barcode_specific_contig_split = barcode_specific_contig.split("_")
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
 
-                coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, pos-1, pos, quality_threshold=0))
+                coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
+                                                                            pos-1, 
+                                                                            pos, 
+                                                                            quality_threshold=0,
+                                                                            read_callback='all'
+                                                                           ))
+                
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
                 
@@ -256,7 +263,13 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
                 just_contig = contig.split('_')[0]
                 
                 try:
-                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, pos-1, pos, quality_threshold=0))
+                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
+                                                                                pos-1, 
+                                                                                pos, 
+                                                                                quality_threshold=0,
+                                                                                read_callback='all'
+                                                                               ))
+                    
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
 
