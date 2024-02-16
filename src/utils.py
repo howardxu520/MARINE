@@ -252,7 +252,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
                                                                             pos-1, 
                                                                             pos, 
                                                                             quality_threshold=0,
-                                                                            read_callback='all'
+                                                                            read_callback=check_read
                                                                            ))
                 
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
