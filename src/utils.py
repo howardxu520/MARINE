@@ -203,8 +203,41 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
         
 def check_read(read):
     return True
+
+def get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, paired_end=False, verbose=False):
+    if not paired_end:
+        if verbose:
+            print("~~~~~~\n!!!!SINGLE END!!!!!\n~~~~~~~`")
+        # count_coverage does not work with paired end reads, because it counts both ends of the read twice...
+        # For more information: https://github.com/pysam-developers/pysam/issues/744 
+        coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
+                                                                    pos-1, 
+                                                                    pos, 
+                                                                    quality_threshold=0,
+                                                                    read_callback='all'
+                                                                   ))
+        return coverage_at_pos
+    else:
+        if verbose:
+            print("~~~~~~\n!!!!PAIRED END!!!!!\n~~~~~~~`")
+            
+        # For paired-end sequencing, it is more accurate to use the pileup function
+        pileupcolumn_iter = samfile_for_barcode.pileup(just_contig, 
+                                                       pos-1, 
+                                                       pos, 
+                                                       stepper='all', 
+                                                       truncate=True, 
+                                                       max_depth=1000000)
         
-def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
+        unique_read_ids = set()
+        for pileupcolumn in pileupcolumn_iter:
+            for pileupread in pileupcolumn.pileups:
+                if not pileupread.is_del and not pileupread.is_refskip:
+                    unique_read_ids.add(pileupread.alignment.query_name)
+        coverage_at_pos = len(unique_read_ids)
+        return coverage_at_pos
+
+def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, verbose=False):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
     contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
@@ -261,15 +294,10 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
             else:
                 # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
-                
                 try:
-                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
-                                                                                pos-1, 
-                                                                                pos, 
-                                                                                quality_threshold=0,
-                                                                                read_callback='all'
-                                                                               ))
-                    
+                    coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, 
+                                                               paired_end=paired_end, verbose=verbose)
+                                
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
 
@@ -283,8 +311,9 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
 
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
-    edit_info, contig, output_folder, barcode_tag = parameters
-    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag)
+    edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
+    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
+                                  paired_end=paired_end, verbose=verbose)
     #coverage_df.columns = ['coverage']
     
     edit_info = edit_info.with_columns(

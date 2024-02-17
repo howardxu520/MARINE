@@ -146,23 +146,16 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     #    return 'N', [], {}
     
     # PROCESS READ TO EXTRACT EDIT INFORMATION
-    strand = '+'
-    if is_reverse:
-        strand = '-'
-        if read.is_paired and read.is_read2:
-            strand = '+'
-            # TODO: CHECK THIS?
-            is_reverse != reverse
-
     if verbose:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print_read_info(read)
-        print("strand:", strand)
         #print("Read ID:", read_id)
         print("----------------------------")
         
-    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse, verbose)
-
+    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, verbose=verbose)
+    if verbose:
+        print("Successfully ran get_edit_information_wrapper\nalt bases: {}, ref bases: {}".format(alt_bases, ref_bases))
+        
     if len(alt_bases) == 0:
         # These are reads that had deletions, and no edits.
         # They are categorized later because it is hard to tell from the MD tag if they have
@@ -172,24 +165,21 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     num_edits_of_each_type = defaultdict(lambda:0)
     
     list_of_rows = []
+    
     for alt, ref, qual, pos in zip(alt_bases, ref_bases, qualities, positions_replaced):
         if alt == "N" or ref == "N":
             continue
+
+        if verbose:
+            print("Getting info:", alt, ref, qual, pos)
             
         assert(alt != ref)
         updated_position = pos+reference_start
-        if is_reverse:
-            alt = reverse_complement(alt)
-            ref = reverse_complement(ref)
-        
-        if reverse_stranded and not barcode_tag:
-            alt = reverse_complement(alt)
-            ref = reverse_complement(ref)
         
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
         list_of_rows.append([
-            read_barcode, str(contig), str(updated_position), ref, alt, read_id, strand, str(distance_from_read_end), str(qual), str(mapq)
+            read_barcode, str(contig), str(updated_position), ref, alt, read_id, '+', str(distance_from_read_end), str(qual), str(mapq)
         ])
         
         num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
@@ -232,7 +222,7 @@ def get_positions_from_md_tag(md_tag, verbose=False):
     try:
         position_splitters = [i for i in ''.join(md_tag_parsed).split('-')]
     except Exception as e:
-        print("Failed on {}, {}".format(md_tag_parsed, e))
+        print("Failed splitting possition on {}, {}".format(md_tag_parsed, e))
         return None
     
     if verbose:
@@ -386,15 +376,15 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
     return alt_bases, ref_bases, qualities, global_positions_replaced_1based
     
     
-def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=False):
+def get_edit_information_wrapper(read, hamming_check=False, verbose=False):
     md_tag = read.get_tag('MD')
     cigarstring = read.cigarstring
        
     cigar_tuples = read.cigartuples
     aligned_seq = read.get_forward_sequence()
     query_qualities = read.query_qualities
-    
-    if not reverse:
+
+    if read.is_reverse:
         aligned_seq = reverse_complement(aligned_seq)
     
     reference_seq = read.get_reference_sequence().lower()

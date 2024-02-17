@@ -88,13 +88,15 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     
-def coverage_processing(output_folder, barcode_tag='CB', cores=1):
+def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1):
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, barcode_tag=barcode_tag)
     
     print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
     
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
                                                                             barcode_tag=barcode_tag,
+                                                                            paired_end=paired_end,
+                                                                            verbose=verbose,
                                                                             processes=cores
                                                                            )
     
@@ -172,7 +174,7 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
     final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
     return final_site_level_information_df, weird_sites
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
+def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
     
     print_marine_logo()
     
@@ -205,7 +207,9 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         )
 
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
+        # REMOVE
         #sys.exit()
+        
         # Make a subfolder into which the split bams will be placed
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
@@ -222,7 +226,11 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites", style='~')
 
-        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag, cores=cores)
+        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
+                                                                               barcode_tag=barcode_tag, 
+                                                                               paired_end=paired_end,
+                                                                               verbose=verbose,
+                                                                               cores=cores)
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
 
@@ -355,7 +363,8 @@ if __name__ == '__main__':
     
     parser.add_argument('--sailor', dest='sailor', action='store_true')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
-                        
+    parser.add_argument('--paired_end', dest='paired_end', action='store_true')
+    
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
     output_folder = args.output_folder
@@ -368,6 +377,7 @@ if __name__ == '__main__':
     filtering_only = args.filtering_only
     sailor = args.sailor
     verbose = args.verbose
+    paired_end = args.paired_end
     
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
@@ -386,6 +396,7 @@ if __name__ == '__main__':
                   "\tBarcode whitelist:\t{}".format(barcode_whitelist_file),
                   "\tReverse Stranded:\t{}".format(reverse_stranded),
                   "\tBarcode Tag:\t{}".format(barcode_tag),
+                  "\tPaired End:\t{}".format(paired_end),
                   "\tCoverage only:\t{}".format(coverage_only),
                   "\tFiltering only:\t{}".format(filtering_only),
                   "\tSailor outputs:\t{}".format(sailor),
@@ -407,6 +418,7 @@ if __name__ == '__main__':
         contigs=contigs,
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
+        paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
         num_intervals_per_contig=16,
         coverage_only=coverage_only,
