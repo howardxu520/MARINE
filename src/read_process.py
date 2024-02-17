@@ -96,8 +96,12 @@ def print_read_info(read):
         
     print('MD tag', md_tag)
     print("CIGAR tag", cigar_string)
-    print('barcode', barcode)
-    
+    print("is_reverse", read.is_reverse)
+    print("is_read1", read.is_read1)
+    print("is_read2", read.is_read2)
+    print("is_paired", read.is_paired)
+    print("mate_is_reverse", read.mate_is_reverse)
+    print("read id", read.query_name)
     
 def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True):
     if barcode_tag is None:
@@ -118,10 +122,6 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     mapq = read.mapping_quality
     cigarstring = read.cigarstring
     
-    if verbose:
-        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print("Read ID:", read_id)
-        print("----------------------------")
     
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
@@ -138,8 +138,8 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     if read.is_qcfail:
         return 'is_qcfail', [], {}
 
-    if read.is_dup:
-        return 'is_dup', [], {}
+    if read.is_duplicate:
+        return 'is_duplicate', [], {}
 
     
     #if 'N' in cigarstring:
@@ -149,7 +149,18 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     strand = '+'
     if is_reverse:
         strand = '-'
-            
+        if read.is_paired and read.is_read2:
+            strand = '+'
+            # TODO: CHECK THIS?
+            is_reverse != reverse
+
+    if verbose:
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print_read_info(read)
+        print("strand:", strand)
+        #print("Read ID:", read_id)
+        print("----------------------------")
+        
     alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse, verbose)
 
     if len(alt_bases) == 0:

@@ -205,7 +205,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         )
 
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-
+        #sys.exit()
         # Make a subfolder into which the split bams will be placed
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
@@ -351,8 +351,10 @@ if __name__ == '__main__':
     parser.add_argument('--min_dist_from_end', type=int, default=10)
 
     parser.add_argument('--min_base_quality', type=int, default=15)
-
+    parser.add_argument('--contigs', type=str, default='all')
+    
     parser.add_argument('--sailor', dest='sailor', action='store_true')
+    parser.add_argument('--verbose', dest='verbose', action='store_true')
                         
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
@@ -360,10 +362,12 @@ if __name__ == '__main__':
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
     reverse_stranded = args.reverse_stranded
+    contigs = args.contigs
     
     coverage_only = args.coverage_only
     filtering_only = args.filtering_only
     sailor = args.sailor
+    verbose = args.verbose
     
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
@@ -387,12 +391,20 @@ if __name__ == '__main__':
                   "\tSailor outputs:\t{}".format(sailor),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
+                  "\tContigs:\t{}".format(contigs),
                   "\tCores:\t{}".format(cores),
+                  "\tVerbose:\t{}".format(verbose)
                  ])
-    
+
+    # Whether to only run for certain contigs 
+    if contigs == 'all':
+        contigs = []
+    else:
+        contigs = contigs.split(",")
+        
     run(bam_filepath, 
         output_folder, 
-        #contigs=['1', '2', '3'],
+        contigs=contigs,
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         barcode_whitelist_file=barcode_whitelist_file,
@@ -402,5 +414,6 @@ if __name__ == '__main__':
         sailor=sailor,
         min_base_quality = min_base_quality, 
         min_dist_from_end = min_dist_from_end,
-        cores = cores
+        cores = cores,
+        verbose = verbose
        )

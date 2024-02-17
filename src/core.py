@@ -142,7 +142,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
             try:
                 error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, reverse_stranded=reverse_stranded, barcode_tag=barcode_tag, verbose=verbose)
             except Exception as e:
-                print("Failed on\n{}".format(read.to_string()))
+                print("Failed on\n{}, {}".format(read.to_string(), e))
                 break
                 
             if error_code:
@@ -204,12 +204,13 @@ def find_edits_and_split_bams_wrapper(parameters):
             reverse_stranded,
             barcode_tag=barcode_tag,
             barcode_whitelist=barcode_whitelist,
-            verbose=False
+            verbose=verbose
         )
         counts_df = pd.DataFrame.from_dict(counts)
         
         if verbose:
-            print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+            pass
+            #print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
         
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         
@@ -217,8 +218,9 @@ def find_edits_and_split_bams_wrapper(parameters):
         bucket_label = int(split_index)#%BULK_SPLITS
         
         if verbose:
-            print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
-            print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
+            pass
+            #print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
+            #print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
         
         if len(barcode_to_concatted_reads) > 0:
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
