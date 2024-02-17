@@ -243,7 +243,9 @@ def find_edits_and_split_bams_wrapper(parameters):
     
     
     
-def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB', paired_end=False, 
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, 
+                            barcode_tag='CB',
+                            paired_end=False, 
                             verbose=False,
                             processes=16):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(

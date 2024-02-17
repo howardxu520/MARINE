@@ -272,9 +272,44 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position']
 
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
+        
+        
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
-    
 
+        
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+
+        pretty_print("Filtering edited sites", style='~')
+        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
+    
+        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
+            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
+            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
+
+
+        print("Deduplicating....")
+        distinguishing_columns = [
+            "barcode",
+            "contig",
+            "position",
+            "ref",
+            "alt",
+            "read_id",
+            "strand",
+            "base_quality",
+            "mapping_quality",
+            "coverage"
+        ]
+        all_edit_info_unique_position_with_coverage_deduped_df = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
+            distinguishing_columns)[distinguishing_columns]
+        
+        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
+        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_deduped_df)))
+        all_edit_info_unique_position_with_coverage_deduped_df.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
+                                         sep='\t')
+        
+
+    
     # Check if filtering step finished
     final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
     final_path_already_exists = False
@@ -287,26 +322,15 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         print("Filtering..")
         
         if filtering_only:
-            all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+            all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
             
-            
-        pretty_print("Filtering edited sites", style='~')
-        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
     
-        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
-            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
-        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_filtered)
+        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
         
         final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
     
-        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
-    
-    
-        all_edit_info_filtered.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                         sep='\t')
+
         final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   separator='\t')
         final_path_already_exists = True

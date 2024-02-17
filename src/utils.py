@@ -176,14 +176,15 @@ def make_folder(folder_path):
     if not os.path.exists(folder_path):
         os.mkdir(folder_path)
 
-def only_keep_positions_for_region(contig, output_folder, positions_for_barcode):
+def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)
     contig_base = contig.split("_")[0]
     
     #print("Contig: {}, contig_base: {}, contig_index: {}".format(contig, contig_base, contig_index))
-    
+
     edit_info_filepath_regex = "{}/edit_info/{}_{}*".format(output_folder, contig_base, contig_index)
     #print("edit_info_filepath_regex: {}".format(edit_info_filepath_regex))
+
     edit_info_filepath = glob(edit_info_filepath_regex)[0].split('/')[-1]
     #sys.stderr.write("Contig: {}, edit_info_filepath: {}\n".format(contig, edit_info_filepath))
     
@@ -237,7 +238,8 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, paired_end=F
         coverage_at_pos = len(unique_read_ids)
         return coverage_at_pos
 
-def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, verbose=False):
+def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
+                    verbose=False):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
     contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
@@ -264,7 +266,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         num_positions = len(positions_for_barcode)
         if not barcode_tag:
             #print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
-            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
+            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=verbose)
             num_positions = len(positions_for_barcode)
             #print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
