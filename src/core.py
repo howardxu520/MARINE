@@ -23,7 +23,7 @@ get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-BULK_SPLITS = 16
+BULK_SPLITS = 32
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64):
     # Make subfolder in which to information about edits

@@ -26,8 +26,10 @@ pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
-        
-    
+
+from annotate import annotate_sites 
+
+
 def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
                 verbose=False, cores=64):
     
@@ -90,8 +92,9 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1):
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, barcode_tag=barcode_tag)
-    
-    print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
+
+    if verbose:
+        print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
     
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
                                                                             barcode_tag=barcode_tag,
@@ -152,7 +155,7 @@ def calculate_sailor_score(sailor_row):
     
 
 def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
-    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['conversion'] == conversion]
+    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['feature_conversion'] == conversion]
     final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + final_site_level_information_df['coverage'].astype(str)
 
     weird_sites = final_site_level_information_df[
@@ -171,10 +174,11 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
     final_site_level_information_df['start'] = final_site_level_information_df['position']
     final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
     
-    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
+    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'feature_strand']]
     return final_site_level_information_df, weird_sites
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
+    
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
     
     print_marine_logo()
     
@@ -317,6 +321,8 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
     # Check if filtering step finished
     final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
     final_path_already_exists = False
+    final_annotated_path_already_exists = False
+    
     if os.path.exists(final_filtered_sites_path):
         print("{} exists...".format(final_filtered_sites_path))
         final_path_already_exists = True
@@ -334,14 +340,27 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
     
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
-
+        
         final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   separator='\t')
         final_path_already_exists = True
         
-            
-    if final_path_already_exists:
+    if not annotation_bedfile_path:
+        print("annotation_bedfile_path argument not provided ...\
+        not annotating with feature information and strand-specific conversions.")
+        
+    if final_path_already_exists and annotation_bedfile_path:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
+        final_site_level_information_annotated_df = annotate_sites(final_site_level_information_df,
+                                                                   annotation_bedfile_path)
+        final_site_level_information_annotated_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), 
+                                                  sep='\t', index=False)
+        final_annotated_path_already_exists = True
+
+    
+    if final_annotated_path_already_exists:
+        final_annotated_site_level_information_df = pd.read_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), 
                                                   sep='\t')
         if sailor:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
@@ -352,17 +371,15 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         # 1       629309  629310  2.8306e-05      1,1043  +
 
         conversion = 'C>T'
-        sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion)
+        sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion)
         sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
             output_folder, 
             conversion.replace(">", "-")), 
             header=False,
             index=False,       
             sep='\t')
-        weird_sites.to_csv('{}/problematic_sites_{}.tsv'.format(
-            output_folder, 
-            conversion.replace(">", "-")), 
-            sep='\t')
+
+        weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
                                          
     pretty_print("Done!", style="+")
     
@@ -370,7 +387,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
             
     parser.add_argument('--bam_filepath', type=str, default=None)
-    
+    parser.add_argument('--annotation_bedfile_path', type=str, default=None)
+
     parser.add_argument('--output_folder', type=str, default=None)
     
     parser.add_argument('--barcode_whitelist_file', type=str, default=None)
@@ -381,7 +399,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--coverage', dest='coverage_only', action='store_true')
     parser.add_argument('--filtering', dest='filtering_only', action='store_true')
-    
+    parser.add_argument('--annotation', dest='annotation_only', action='store_true')
+
     parser.add_argument('--barcode_tag', type=str, default=None)
     
     parser.add_argument('--min_dist_from_end', type=int, default=10)
@@ -395,14 +414,18 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
+    annotation_bedfile_path = args.annotation_bedfile_path
     output_folder = args.output_folder
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
     reverse_stranded = args.reverse_stranded
     contigs = args.contigs
+    annotation_bedfile_path = args.annotation_bedfile_path
     
     coverage_only = args.coverage_only
     filtering_only = args.filtering_only
+    annotation_only= args.annotation_only
+    
     sailor = args.sailor
     verbose = args.verbose
     paired_end = args.paired_end
@@ -420,6 +443,7 @@ if __name__ == '__main__':
     
     pretty_print(["Arguments:",
                   "\tBAM filepath:\t{}".format(bam_filepath), 
+                  "\tAnnotation bedfile filepath:\t{}".format(annotation_bedfile_path),
                   "\tOutput folder:\t{}".format(output_folder),
                   "\tBarcode whitelist:\t{}".format(barcode_whitelist_file),
                   "\tReverse Stranded:\t{}".format(reverse_stranded),
@@ -427,6 +451,7 @@ if __name__ == '__main__':
                   "\tPaired End:\t{}".format(paired_end),
                   "\tCoverage only:\t{}".format(coverage_only),
                   "\tFiltering only:\t{}".format(filtering_only),
+                  "\tAnnotation only:\t{}".format(annotation_only),
                   "\tSailor outputs:\t{}".format(sailor),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
@@ -442,15 +467,17 @@ if __name__ == '__main__':
         contigs = contigs.split(",")
         
     run(bam_filepath, 
+        annotation_bedfile_path,
         output_folder, 
         contigs=contigs,
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=16,
+        num_intervals_per_contig=32,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
+        annotation_only=annotation_only,
         sailor=sailor,
         min_base_quality = min_base_quality, 
         min_dist_from_end = min_dist_from_end,
