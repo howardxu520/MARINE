@@ -226,6 +226,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, paired_end=F
         pileupcolumn_iter = samfile_for_barcode.pileup(just_contig, 
                                                        pos-1, 
                                                        pos, 
+                                                       #stepper='nofilter',
                                                        stepper='all', 
                                                        truncate=True, 
                                                        max_depth=1000000)
@@ -283,13 +284,22 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 barcode_specific_contig_split = barcode_specific_contig.split("_")
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
 
+                if verbose:
+                    #print("contig_bam:", contig_bam)
+                    #print("barcode_specific_contig:", barcode_specific_contig)
+                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
+                    
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
                                                                             pos-1, 
                                                                             pos, 
                                                                             quality_threshold=0,
                                                                             read_callback='all'
                                                                            ))
-                
+
+                if verbose:
+                    if pos == 3000527:
+                        print("Barcode {}, Coverage at position {}:{} is {}".format(barcode, contig, pos, coverage_at_pos))
+                    
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
                 
@@ -397,7 +407,7 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
         
         
         
-def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB'):
+def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', verbose=False):
     job_params = []
     
     # Sort the subcontig regions such that the reads are properly ordered 
@@ -409,12 +419,15 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             sorted_subcontig_dfs.append(subcontig)
         
     if len(sorted_subcontig_dfs) == 0:
-        print("Empty")
+        if verbose:
+            print("{} was empty".format(contig))
         return []
-    
-    print("\t{}: num subcontigs to concat: {}".format(contig, len(sorted_subcontig_dfs)))
-    # All of the reads for all of the barcodes are in this dataframe
-    print("\t{}: concatting".format(contig))
+
+    if verbose:
+        print("\t{}: num subcontigs to concat: {}".format(contig, len(sorted_subcontig_dfs)))
+        # All of the reads for all of the barcodes are in this dataframe
+        print("\t{}: concatting".format(contig))
+        
     all_contents_df = pl.concat(sorted_subcontig_dfs)
                 
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
@@ -484,7 +497,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             
     
 def concat_and_write_bams_wrapper(params):
-    contig, df_dict, header_string, split_bams_folder, barcode_tag = params
+    contig, df_dict, header_string, split_bams_folder, barcode_tag, verbose = params
     
     # print("df_dict keys: {}".format(df_dict.keys()))
-    concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag)
+    concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, verbose=verbose)

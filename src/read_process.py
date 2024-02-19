@@ -129,6 +129,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
 
     # Defaults for coverage counting as well 
     # count_coverage function at: https://pysam.readthedocs.io/en/v0.16.0.1/api.html
+    
     if read.is_secondary:
         return 'secondary', [], {}
 
@@ -140,7 +141,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
 
     if read.is_duplicate:
         return 'is_duplicate', [], {}
-
+    
     
     #if 'N' in cigarstring:
     #    return 'N', [], {}
@@ -353,11 +354,19 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
             finalized_fixed_aligned_seq += lower_char
 
     if verbose:
-        print("Indicated reference seq:\n", indicated_reference_seq)
+        if 'n' in fixed_aligned_seq:
+            num_n = fixed_aligned_seq.count("n")
+            n_to_replace = ''.join([i for i in fixed_aligned_seq if i == "n"])
+        else:
+            num_n = 1
+            n_to_replace = 'n'
+            
+        print("Indicated reference seq:\n", indicated_reference_seq.replace(n_to_replace, "{}*n".format(num_n)))
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print("Fixed reference seq:\n", fixed_reference_seq)
-        print("Fixed aligned seq:\n", fixed_aligned_seq)
-        print("Finalized fixed aligned seq:\n", finalized_fixed_aligned_seq)
+        print("Fixed reference seq:\n", fixed_reference_seq.replace(n_to_replace, "{}*n".format(num_n)))
+            
+        print("Fixed aligned seq:\n", fixed_aligned_seq.replace(n_to_replace, "{}*n".format(num_n)))
+        print("Finalized fixed aligned seq:\n", finalized_fixed_aligned_seq.replace(n_to_replace, "{}*n".format(num_n)))
 
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('alt bases', alt_bases)

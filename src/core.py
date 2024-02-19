@@ -65,7 +65,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
 
 
 
-def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1):
+def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1, verbose=False):
     start_time = time.perf_counter()
 
     with pysam.AlignmentFile(bampath, "rb") as samfile:
@@ -80,7 +80,7 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
     with get_context("spawn").Pool(processes=num_processes) as p:
         max_ = len(contigs_to_generate_bams_for)
         with tqdm(total=max_) as pbar:
-            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, barcode_tag] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
+            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, barcode_tag, verbose] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
                 pbar.update()
                 
                 total_bams += 1

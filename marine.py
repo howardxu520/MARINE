@@ -67,7 +67,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df
 
 
-def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1):
+def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, verbose=False):
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
@@ -77,7 +77,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     # BAM Generation
-    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores)
+    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores, verbose=verbose)
     
     total_seconds_for_bams_df = pd.DataFrame.from_dict(total_seconds_for_bams, orient='index')
     total_seconds_for_bams_df.columns = ['seconds']
@@ -216,7 +216,7 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores)
+        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, verbose=verbose)
         total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
         pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
@@ -237,7 +237,8 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
         all_edit_info_pd = pd.concat(results)
 
-        #all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+        if verbose:
+            all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
 
         # Filtering and site-level information
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -247,12 +248,15 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
 
         # Convert to polars for faster operations
-        all_edit_info = pl.from_pandas(all_edit_info_pd)
+        #all_edit_info = pl.from_pandas(all_edit_info_pd)
 
         # Ensure that we are taking cleaning for only unique edits
+        # TODO fix thisssssss
+        all_edit_info_pd['position_barcode'] = all_edit_info_pd['position'].astype(str) + '_' + all_edit_info_pd['barcode'].astype(str)
+        
         coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
         [
-            "position"
+            "position_barcode"
         ]).coverage.max())
 
         distinguishing_columns = [
@@ -269,7 +273,8 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         ]
         all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
 
-        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position']
+        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position'].astype(str)\
++ '_' + all_edit_info_unique_position_df['barcode']
 
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
         
@@ -296,7 +301,6 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
             "alt",
             "read_id",
             "strand",
-            "base_quality",
             "mapping_quality",
             "coverage"
         ]
