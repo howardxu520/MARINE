@@ -8,7 +8,7 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
-BULK_SPLITS = 16
+BULK_SPLITS = 32
 
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
@@ -205,7 +205,7 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode,
 def check_read(read):
     return True
 
-def get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, paired_end=False, verbose=False):
+def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, paired_end=False, verbose=False):
     if not paired_end:
         if verbose:
             print("~~~~~~\n!!!!SINGLE END!!!!!\n~~~~~~~`")
@@ -220,21 +220,24 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, paired_end=F
         return coverage_at_pos
     else:
         if verbose:
-            print("~~~~~~\n!!!!PAIRED END!!!!!\n~~~~~~~`")
+            print("~~~~~~\n!!!!PAIRED END!!!!!\npos: {}\n {}:{}~~~~~~~`".format(contig_bam, just_contig, pos))
             
         # For paired-end sequencing, it is more accurate to use the pileup function
         pileupcolumn_iter = samfile_for_barcode.pileup(just_contig, 
                                                        pos-1, 
                                                        pos, 
-                                                       #stepper='nofilter',
-                                                       stepper='all', 
+                                                       stepper='nofilter',
+                                                       #stepper='all', 
                                                        truncate=True, 
+                                                       min_base_quality=0,
                                                        max_depth=1000000)
         
         unique_read_ids = set()
         for pileupcolumn in pileupcolumn_iter:
             for pileupread in pileupcolumn.pileups:
-                if not pileupread.is_del and not pileupread.is_refskip:
+                #if verbose:
+                #    print("at pos {}:{}:".format(just_contig, pos), pileupread)
+                if not pileupread.is_del and not pileupread.is_refskip:                                        
                     unique_read_ids.add(pileupread.alignment.query_name)
         coverage_at_pos = len(unique_read_ids)
         return coverage_at_pos
@@ -307,7 +310,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
                 try:
-                    coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, 
+                    coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
                                                                paired_end=paired_end, verbose=verbose)
                                 
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
@@ -444,13 +447,14 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
         else:
             all_contents_for_suffix = all_contents_df.filter(pl.col('bucket') == suffix)
             
-            
-        print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
-                contig,
-                suffix,
-                len(all_contents_df),
-                len(all_contents_for_suffix)
-                ))
+
+        if verbose:
+            print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                    contig,
+                    suffix,
+                    len(all_contents_df),
+                    len(all_contents_for_suffix)
+                    ))
         
         try:
             reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
