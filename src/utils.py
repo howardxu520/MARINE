@@ -176,14 +176,15 @@ def make_folder(folder_path):
     if not os.path.exists(folder_path):
         os.mkdir(folder_path)
 
-def only_keep_positions_for_region(contig, output_folder, positions_for_barcode):
+def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)
     contig_base = contig.split("_")[0]
     
     #print("Contig: {}, contig_base: {}, contig_index: {}".format(contig, contig_base, contig_index))
-    
+
     edit_info_filepath_regex = "{}/edit_info/{}_{}*".format(output_folder, contig_base, contig_index)
     #print("edit_info_filepath_regex: {}".format(edit_info_filepath_regex))
+
     edit_info_filepath = glob(edit_info_filepath_regex)[0].split('/')[-1]
     #sys.stderr.write("Contig: {}, edit_info_filepath: {}\n".format(contig, edit_info_filepath))
     
@@ -203,8 +204,43 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
         
 def check_read(read):
     return True
+
+def get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, paired_end=False, verbose=False):
+    if not paired_end:
+        if verbose:
+            print("~~~~~~\n!!!!SINGLE END!!!!!\n~~~~~~~`")
+        # count_coverage does not work with paired end reads, because it counts both ends of the read twice...
+        # For more information: https://github.com/pysam-developers/pysam/issues/744 
+        coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
+                                                                    pos-1, 
+                                                                    pos, 
+                                                                    quality_threshold=0,
+                                                                    read_callback='all'
+                                                                   ))
+        return coverage_at_pos
+    else:
+        if verbose:
+            print("~~~~~~\n!!!!PAIRED END!!!!!\n~~~~~~~`")
+            
+        # For paired-end sequencing, it is more accurate to use the pileup function
+        pileupcolumn_iter = samfile_for_barcode.pileup(just_contig, 
+                                                       pos-1, 
+                                                       pos, 
+                                                       #stepper='nofilter',
+                                                       stepper='all', 
+                                                       truncate=True, 
+                                                       max_depth=1000000)
         
-def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
+        unique_read_ids = set()
+        for pileupcolumn in pileupcolumn_iter:
+            for pileupread in pileupcolumn.pileups:
+                if not pileupread.is_del and not pileupread.is_refskip:
+                    unique_read_ids.add(pileupread.alignment.query_name)
+        coverage_at_pos = len(unique_read_ids)
+        return coverage_at_pos
+
+def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
+                    verbose=False):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
     contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
@@ -231,7 +267,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
         num_positions = len(positions_for_barcode)
         if not barcode_tag:
             #print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
-            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode)
+            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=verbose)
             num_positions = len(positions_for_barcode)
             #print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
@@ -248,28 +284,32 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
                 barcode_specific_contig_split = barcode_specific_contig.split("_")
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
 
+                if verbose:
+                    #print("contig_bam:", contig_bam)
+                    #print("barcode_specific_contig:", barcode_specific_contig)
+                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
+                    
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
                                                                             pos-1, 
                                                                             pos, 
                                                                             quality_threshold=0,
                                                                             read_callback='all'
                                                                            ))
-                
+
+                if verbose:
+                    if pos == 3000527:
+                        print("Barcode {}, Coverage at position {}:{} is {}".format(barcode, contig, pos, coverage_at_pos))
+                    
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
                 
             else:
                 # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
-                
                 try:
-                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
-                                                                                pos-1, 
-                                                                                pos, 
-                                                                                quality_threshold=0,
-                                                                                read_callback='all'
-                                                                               ))
-                    
+                    coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, just_contig, pos, 
+                                                               paired_end=paired_end, verbose=verbose)
+                                
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
 
@@ -283,8 +323,9 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB'):
 
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
-    edit_info, contig, output_folder, barcode_tag = parameters
-    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag)
+    edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
+    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
+                                  paired_end=paired_end, verbose=verbose)
     #coverage_df.columns = ['coverage']
     
     edit_info = edit_info.with_columns(
@@ -366,7 +407,7 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
         
         
         
-def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB'):
+def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', verbose=False):
     job_params = []
     
     # Sort the subcontig regions such that the reads are properly ordered 
@@ -378,12 +419,15 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             sorted_subcontig_dfs.append(subcontig)
         
     if len(sorted_subcontig_dfs) == 0:
-        print("Empty")
+        if verbose:
+            print("{} was empty".format(contig))
         return []
-    
-    print("\t{}: num subcontigs to concat: {}".format(contig, len(sorted_subcontig_dfs)))
-    # All of the reads for all of the barcodes are in this dataframe
-    print("\t{}: concatting".format(contig))
+
+    if verbose:
+        print("\t{}: num subcontigs to concat: {}".format(contig, len(sorted_subcontig_dfs)))
+        # All of the reads for all of the barcodes are in this dataframe
+        print("\t{}: concatting".format(contig))
+        
     all_contents_df = pl.concat(sorted_subcontig_dfs)
                 
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
@@ -453,7 +497,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             
     
 def concat_and_write_bams_wrapper(params):
-    contig, df_dict, header_string, split_bams_folder, barcode_tag = params
+    contig, df_dict, header_string, split_bams_folder, barcode_tag, verbose = params
     
     # print("df_dict keys: {}".format(df_dict.keys()))
-    concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag)
+    concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, verbose=verbose)

@@ -65,7 +65,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
 
 
 
-def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1):
+def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1, verbose=False):
     start_time = time.perf_counter()
 
     with pysam.AlignmentFile(bampath, "rb") as samfile:
@@ -80,7 +80,7 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
     with get_context("spawn").Pool(processes=num_processes) as p:
         max_ = len(contigs_to_generate_bams_for)
         with tqdm(total=max_) as pbar:
-            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, barcode_tag] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
+            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, barcode_tag, verbose] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
                 pbar.update()
                 
                 total_bams += 1
@@ -142,7 +142,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
             try:
                 error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, reverse_stranded=reverse_stranded, barcode_tag=barcode_tag, verbose=verbose)
             except Exception as e:
-                print("Failed on\n{}".format(read.to_string()))
+                print("Failed getting read info on\n{}, {}".format(read.to_string(), e))
                 break
                 
             if error_code:
@@ -204,12 +204,13 @@ def find_edits_and_split_bams_wrapper(parameters):
             reverse_stranded,
             barcode_tag=barcode_tag,
             barcode_whitelist=barcode_whitelist,
-            verbose=False
+            verbose=verbose
         )
         counts_df = pd.DataFrame.from_dict(counts)
         
         if verbose:
-            print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+            pass
+            #print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
         
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         
@@ -217,8 +218,9 @@ def find_edits_and_split_bams_wrapper(parameters):
         bucket_label = int(split_index)#%BULK_SPLITS
         
         if verbose:
-            print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
-            print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
+            pass
+            #print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
+            #print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
         
         if len(barcode_to_concatted_reads) > 0:
             barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
@@ -241,11 +243,17 @@ def find_edits_and_split_bams_wrapper(parameters):
     
     
     
-def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB', processes=16):
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, 
+                            barcode_tag='CB',
+                            paired_end=False, 
+                            verbose=False,
+                            processes=16):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
-        barcode_tag=barcode_tag
+        barcode_tag=barcode_tag,
+        paired_end=paired_end,
+        verbose=verbose
     )
     
     start_time = time.perf_counter()
@@ -270,14 +278,13 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
     return results, total_time, total_seconds_for_contig
 
 
-def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder, barcode_tag='CB'):
+def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder,
+                                                    barcode_tag='CB', paired_end=False, verbose=False):
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
-            
-        #print([len(edit_info), contig, output_folder, barcode_tag])
-        
-        job_params.append([edit_info, contig, output_folder, barcode_tag])  
+                    
+        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose])  
         
     return job_params
 

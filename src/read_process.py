@@ -96,8 +96,12 @@ def print_read_info(read):
         
     print('MD tag', md_tag)
     print("CIGAR tag", cigar_string)
-    print('barcode', barcode)
-    
+    print("is_reverse", read.is_reverse)
+    print("is_read1", read.is_read1)
+    print("is_read2", read.is_read2)
+    print("is_paired", read.is_paired)
+    print("mate_is_reverse", read.mate_is_reverse)
+    print("read id", read.query_name)
     
 def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True):
     if barcode_tag is None:
@@ -118,10 +122,6 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     mapq = read.mapping_quality
     cigarstring = read.cigarstring
     
-    if verbose:
-        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print("Read ID:", read_id)
-        print("----------------------------")
     
     # ERROR CHECKS, WITH RETURN CODE SPECIFIED
     if not has_edits(read):
@@ -129,6 +129,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
 
     # Defaults for coverage counting as well 
     # count_coverage function at: https://pysam.readthedocs.io/en/v0.16.0.1/api.html
+    
     if read.is_secondary:
         return 'secondary', [], {}
 
@@ -138,20 +139,24 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     if read.is_qcfail:
         return 'is_qcfail', [], {}
 
-    if read.is_dup:
-        return 'is_dup', [], {}
-
+    if read.is_duplicate:
+        return 'is_duplicate', [], {}
+    
     
     #if 'N' in cigarstring:
     #    return 'N', [], {}
     
     # PROCESS READ TO EXTRACT EDIT INFORMATION
-    strand = '+'
-    if is_reverse:
-        strand = '-'
-            
-    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, not is_reverse, verbose)
-
+    if verbose:
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print_read_info(read)
+        #print("Read ID:", read_id)
+        print("----------------------------")
+        
+    alt_bases, ref_bases, qualities, positions_replaced = get_edit_information_wrapper(read, verbose=verbose)
+    if verbose:
+        print("Successfully ran get_edit_information_wrapper\nalt bases: {}, ref bases: {}".format(alt_bases, ref_bases))
+        
     if len(alt_bases) == 0:
         # These are reads that had deletions, and no edits.
         # They are categorized later because it is hard to tell from the MD tag if they have
@@ -161,24 +166,21 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     num_edits_of_each_type = defaultdict(lambda:0)
     
     list_of_rows = []
+    
     for alt, ref, qual, pos in zip(alt_bases, ref_bases, qualities, positions_replaced):
         if alt == "N" or ref == "N":
             continue
+
+        if verbose:
+            print("Getting info:", alt, ref, qual, pos)
             
         assert(alt != ref)
         updated_position = pos+reference_start
-        if is_reverse:
-            alt = reverse_complement(alt)
-            ref = reverse_complement(ref)
-        
-        if reverse_stranded and not barcode_tag:
-            alt = reverse_complement(alt)
-            ref = reverse_complement(ref)
         
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
         list_of_rows.append([
-            read_barcode, str(contig), str(updated_position), ref, alt, read_id, strand, str(distance_from_read_end), str(qual), str(mapq)
+            read_barcode, str(contig), str(updated_position), ref, alt, read_id, '+', str(distance_from_read_end), str(qual), str(mapq)
         ])
         
         num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
@@ -221,7 +223,7 @@ def get_positions_from_md_tag(md_tag, verbose=False):
     try:
         position_splitters = [i for i in ''.join(md_tag_parsed).split('-')]
     except Exception as e:
-        print("Failed on {}, {}".format(md_tag_parsed, e))
+        print("Failed splitting possition on {}, {}".format(md_tag_parsed, e))
         return None
     
     if verbose:
@@ -352,11 +354,19 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
             finalized_fixed_aligned_seq += lower_char
 
     if verbose:
-        print("Indicated reference seq:\n", indicated_reference_seq)
+        if 'n' in fixed_aligned_seq:
+            num_n = fixed_aligned_seq.count("n")
+            n_to_replace = ''.join([i for i in fixed_aligned_seq if i == "n"])
+        else:
+            num_n = 1
+            n_to_replace = 'n'
+            
+        print("Indicated reference seq:\n", indicated_reference_seq.replace(n_to_replace, "{}*n".format(num_n)))
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print("Fixed reference seq:\n", fixed_reference_seq)
-        print("Fixed aligned seq:\n", fixed_aligned_seq)
-        print("Finalized fixed aligned seq:\n", finalized_fixed_aligned_seq)
+        print("Fixed reference seq:\n", fixed_reference_seq.replace(n_to_replace, "{}*n".format(num_n)))
+            
+        print("Fixed aligned seq:\n", fixed_aligned_seq.replace(n_to_replace, "{}*n".format(num_n)))
+        print("Finalized fixed aligned seq:\n", finalized_fixed_aligned_seq.replace(n_to_replace, "{}*n".format(num_n)))
 
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('alt bases', alt_bases)
@@ -375,15 +385,15 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
     return alt_bases, ref_bases, qualities, global_positions_replaced_1based
     
     
-def get_edit_information_wrapper(read, reverse, hamming_check=False, verbose=False):
+def get_edit_information_wrapper(read, hamming_check=False, verbose=False):
     md_tag = read.get_tag('MD')
     cigarstring = read.cigarstring
        
     cigar_tuples = read.cigartuples
     aligned_seq = read.get_forward_sequence()
     query_qualities = read.query_qualities
-    
-    if not reverse:
+
+    if read.is_reverse:
         aligned_seq = reverse_complement(aligned_seq)
     
     reference_seq = read.get_reference_sequence().lower()

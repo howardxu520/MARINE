@@ -67,7 +67,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df
 
 
-def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1):
+def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, verbose=False):
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
@@ -77,7 +77,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     # BAM Generation
-    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores)
+    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores, verbose=verbose)
     
     total_seconds_for_bams_df = pd.DataFrame.from_dict(total_seconds_for_bams, orient='index')
     total_seconds_for_bams_df.columns = ['seconds']
@@ -88,13 +88,15 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     
-def coverage_processing(output_folder, barcode_tag='CB', cores=1):
+def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1):
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, barcode_tag=barcode_tag)
     
     print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
     
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
                                                                             barcode_tag=barcode_tag,
+                                                                            paired_end=paired_end,
+                                                                            verbose=verbose,
                                                                             processes=cores
                                                                            )
     
@@ -172,7 +174,7 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
     final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
     return final_site_level_information_df, weird_sites
     
-def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
+def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
     
     print_marine_logo()
     
@@ -205,14 +207,16 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         )
 
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-
+        # REMOVE
+        #sys.exit()
+        
         # Make a subfolder into which the split bams will be placed
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
         pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores)
+        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, verbose=verbose)
         total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
         pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
@@ -222,14 +226,19 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites", style='~')
 
-        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, barcode_tag=barcode_tag, cores=cores)
+        results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
+                                                                               barcode_tag=barcode_tag, 
+                                                                               paired_end=paired_end,
+                                                                               verbose=verbose,
+                                                                               cores=cores)
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
 
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
         all_edit_info_pd = pd.concat(results)
 
-        #all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+        if verbose:
+            all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
 
         # Filtering and site-level information
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -239,12 +248,15 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
 
         # Convert to polars for faster operations
-        all_edit_info = pl.from_pandas(all_edit_info_pd)
+        #all_edit_info = pl.from_pandas(all_edit_info_pd)
 
         # Ensure that we are taking cleaning for only unique edits
+        # TODO fix thisssssss
+        all_edit_info_pd['position_barcode'] = all_edit_info_pd['position'].astype(str) + '_' + all_edit_info_pd['barcode'].astype(str)
+        
         coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
         [
-            "position"
+            "position_barcode"
         ]).coverage.max())
 
         distinguishing_columns = [
@@ -261,12 +273,47 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         ]
         all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
 
-        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position']
+        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position'].astype(str)\
++ '_' + all_edit_info_unique_position_df['barcode']
 
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
+        
+        
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
-    
 
+        
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+
+        pretty_print("Filtering edited sites", style='~')
+        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
+    
+        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
+            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
+            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
+
+
+        print("Deduplicating....")
+        distinguishing_columns = [
+            "barcode",
+            "contig",
+            "position",
+            "ref",
+            "alt",
+            "read_id",
+            "strand",
+            "mapping_quality",
+            "coverage"
+        ]
+        all_edit_info_unique_position_with_coverage_deduped_df = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
+            distinguishing_columns)[distinguishing_columns]
+        
+        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
+        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_deduped_df)))
+        all_edit_info_unique_position_with_coverage_deduped_df.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
+                                         sep='\t')
+        
+
+    
     # Check if filtering step finished
     final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
     final_path_already_exists = False
@@ -279,26 +326,15 @@ def run(bam_filepath, output_folder, contigs=[], num_intervals_per_contig=16, re
         print("Filtering..")
         
         if filtering_only:
-            all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+            all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
             
-            
-        pretty_print("Filtering edited sites", style='~')
-        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
     
-        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
-            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
-        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_filtered)
+        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
         
         final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
     
-        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
-    
-    
-        all_edit_info_filtered.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                         sep='\t')
+
         final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   separator='\t')
         final_path_already_exists = True
@@ -351,19 +387,25 @@ if __name__ == '__main__':
     parser.add_argument('--min_dist_from_end', type=int, default=10)
 
     parser.add_argument('--min_base_quality', type=int, default=15)
-
+    parser.add_argument('--contigs', type=str, default='all')
+    
     parser.add_argument('--sailor', dest='sailor', action='store_true')
-                        
+    parser.add_argument('--verbose', dest='verbose', action='store_true')
+    parser.add_argument('--paired_end', dest='paired_end', action='store_true')
+    
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
     output_folder = args.output_folder
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
     reverse_stranded = args.reverse_stranded
+    contigs = args.contigs
     
     coverage_only = args.coverage_only
     filtering_only = args.filtering_only
     sailor = args.sailor
+    verbose = args.verbose
+    paired_end = args.paired_end
     
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
@@ -382,19 +424,29 @@ if __name__ == '__main__':
                   "\tBarcode whitelist:\t{}".format(barcode_whitelist_file),
                   "\tReverse Stranded:\t{}".format(reverse_stranded),
                   "\tBarcode Tag:\t{}".format(barcode_tag),
+                  "\tPaired End:\t{}".format(paired_end),
                   "\tCoverage only:\t{}".format(coverage_only),
                   "\tFiltering only:\t{}".format(filtering_only),
                   "\tSailor outputs:\t{}".format(sailor),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
+                  "\tContigs:\t{}".format(contigs),
                   "\tCores:\t{}".format(cores),
+                  "\tVerbose:\t{}".format(verbose)
                  ])
-    
+
+    # Whether to only run for certain contigs 
+    if contigs == 'all':
+        contigs = []
+    else:
+        contigs = contigs.split(",")
+        
     run(bam_filepath, 
         output_folder, 
-        #contigs=['1', '2', '3'],
+        contigs=contigs,
         reverse_stranded=reverse_stranded,
         barcode_tag=barcode_tag,
+        paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
         num_intervals_per_contig=16,
         coverage_only=coverage_only,
@@ -402,5 +454,6 @@ if __name__ == '__main__':
         sailor=sailor,
         min_base_quality = min_base_quality, 
         min_dist_from_end = min_dist_from_end,
-        cores = cores
+        cores = cores,
+        verbose = verbose
        )
