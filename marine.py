@@ -69,17 +69,22 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df
 
 
-def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, verbose=False):
+def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
+                   verbose=False):
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
                                                                       split_bams_folder, 
-                                                                      barcode_tag=barcode_tag)
+                                                                      barcode_tag=barcode_tag,
+                                                                      number_of_expected_bams=number_of_expected_bams
+                                                                     )
     pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
     
     
     # BAM Generation
-    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores, verbose=verbose)
+    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(split_bams_folder, bam_filepath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag=barcode_tag, cores=cores, 
+                                                                                number_of_expected_bams=number_of_expected_bams,
+                                                                                verbose=verbose)
     
     total_seconds_for_bams_df = pd.DataFrame.from_dict(total_seconds_for_bams, orient='index')
     total_seconds_for_bams_df.columns = ['seconds']
@@ -90,8 +95,11 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     
-def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1):
-    edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, barcode_tag=barcode_tag)
+def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4):
+    edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
+                                                                                      barcode_tag=barcode_tag,
+                                                                                      number_of_expected_bams=number_of_expected_bams
+                                                                                     )
 
     if verbose:
         print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
@@ -178,7 +186,7 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
     return final_site_level_information_df, weird_sites
     
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64):
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64, number_of_expected_bams=4):
     
     print_marine_logo()
     
@@ -220,7 +228,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, verbose=verbose)
+        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
         total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
         pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
@@ -234,7 +242,9 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                                barcode_tag=barcode_tag, 
                                                                                paired_end=paired_end,
                                                                                verbose=verbose,
-                                                                               cores=cores)
+                                                                               cores=cores,
+                                                                               number_of_expected_bams=number_of_expected_bams
+                                                                              )
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
 
@@ -465,7 +475,8 @@ if __name__ == '__main__':
         contigs = []
     else:
         contigs = contigs.split(",")
-        
+
+    
     run(bam_filepath, 
         annotation_bedfile_path,
         output_folder, 
@@ -474,7 +485,7 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=32,
+        num_intervals_per_contig=200,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
@@ -482,5 +493,6 @@ if __name__ == '__main__':
         min_base_quality = min_base_quality, 
         min_dist_from_end = min_dist_from_end,
         cores = cores,
-        verbose = verbose
+        verbose = verbose,
+        number_of_expected_bams=200
        )

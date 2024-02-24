@@ -17,13 +17,12 @@ get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_infor
 has_edits,get_total_coverage_for_contig_at_position,\
 print_read_info, get_read_information, get_hamming_distance, remove_softclipped_bases,find
 
-from utils import get_contigs_that_need_bams_written, get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
+from utils import get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs, pretty_print,\
 get_edit_info_for_barcode_in_contig_wrapper
 
 import os, psutil
 
-BULK_SPLITS = 32
 
 def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64):
     # Make subfolder in which to information about edits
@@ -44,7 +43,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     start_time = time.perf_counter()
     
     multiprocessing.set_start_method('spawn')
-    with get_context("spawn").Pool(processes=cores) as p:
+    with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
@@ -65,7 +64,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
 
 
 
-def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1, verbose=False):
+def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1, number_of_expected_bams=4, verbose=False):
     start_time = time.perf_counter()
 
     with pysam.AlignmentFile(bampath, "rb") as samfile:
@@ -77,10 +76,11 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
     
     total_seconds_for_bams = {0: 1}
     total_bams = 0
-    with get_context("spawn").Pool(processes=num_processes) as p:
+    with get_context("spawn").Pool(processes=num_processes, maxtasksperchild=4) as p:
         max_ = len(contigs_to_generate_bams_for)
         with tqdm(total=max_) as pbar:
-            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, barcode_tag, verbose] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
+            for _ in p.imap_unordered(concat_and_write_bams_wrapper, [[i[0], i[1], header_string, split_bams_folder, 
+                                                                       barcode_tag, number_of_expected_bams, verbose] for i in overall_label_to_list_of_contents.items() if i[0] in contigs_to_generate_bams_for]):
                 pbar.update()
                 
                 total_bams += 1
@@ -289,7 +289,7 @@ def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig
     return job_params
 
     
-def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
+def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', number_of_expected_bams=4):
     
     splits = [i.split("/")[-1].split('_edit')[0] for i in sorted(glob('{}/edit_info/*'.format(output_folder)))]
 
@@ -321,7 +321,7 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB'):
         elif not barcode_tag:
             # If we are not splitting up contigs by their barcode ending, instead let's do it by the random bucket assigned
             # (See concat_and_write_bams function)
-            range_for_suffixes = BULK_SPLITS
+            range_for_suffixes = number_of_expected_bams
             suffix_options = range(0, range_for_suffixes)
                     
         for suffix in suffix_options:

@@ -8,9 +8,7 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
-BULK_SPLITS = 32
-
-def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB'):
+def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
 
     subsets_per_contig = defaultdict(lambda:0)
@@ -21,7 +19,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     if barcode_tag == 'CB':
         number_of_expected_bams = 4
     else:
-        number_of_expected_bams = BULK_SPLITS
+        number_of_expected_bams = number_of_expected_bams
         
     contigs_to_write_bams_for = []
     for c in expected_contigs:
@@ -185,10 +183,11 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode,
     edit_info_filepath_regex = "{}/edit_info/{}_{}*".format(output_folder, contig_base, contig_index)
     #print("edit_info_filepath_regex: {}".format(edit_info_filepath_regex))
 
-    edit_info_filepath = glob(edit_info_filepath_regex)[0].split('/')[-1]
-    #sys.stderr.write("Contig: {}, edit_info_filepath: {}\n".format(contig, edit_info_filepath))
-    
+    edit_info_filepath = 'Not yet set'
     try:
+        edit_info_filepath = glob(edit_info_filepath_regex)[0].split('/')[-1]
+        #sys.stderr.write("Contig: {}, edit_info_filepath: {}\n".format(contig, edit_info_filepath))
+        
         second_half_of_filepath = edit_info_filepath.split('_{}_'.format(contig_index))[-1]
         #print("Contig: {}, second_half_of_filepath: {}".format(contig,second_half_of_filepath))
         min_pos, max_pos = second_half_of_filepath.split('_edit_info')[0].split('_')
@@ -299,10 +298,6 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                                                                             read_callback='all'
                                                                            ))
 
-                if verbose:
-                    if pos == 3000527:
-                        print("Barcode {}, Coverage at position {}:{} is {}".format(barcode, contig, pos, coverage_at_pos))
-                    
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
                 
@@ -327,8 +322,12 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
+
+    #print("For contig {}, started running get_coverage_df...".format(contig))
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
                                   paired_end=paired_end, verbose=verbose)
+    #print("\t\t\tFor contig {}, finished running get_coverage_df...".format(contig))
+
     #coverage_df.columns = ['coverage']
     
     edit_info = edit_info.with_columns(
@@ -410,7 +409,7 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
         
         
         
-def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', verbose=False):
+def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4, verbose=False):
     job_params = []
     
     # Sort the subcontig regions such that the reads are properly ordered 
@@ -438,7 +437,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
         suffix_options = ["A-1", "C-1", "G-1", "T-1"]
     else:
         # If we are not splitting up contigs by their barcode ending, instead let's do it by random bucket
-        range_for_suffixes = BULK_SPLITS
+        range_for_suffixes = number_of_expected_bams
         suffix_options = range(0, range_for_suffixes)
         
     for suffix in suffix_options:
@@ -501,7 +500,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             
     
 def concat_and_write_bams_wrapper(params):
-    contig, df_dict, header_string, split_bams_folder, barcode_tag, verbose = params
+    contig, df_dict, header_string, split_bams_folder, barcode_tag, number_of_expected_bams, verbose = params
     
     # print("df_dict keys: {}".format(df_dict.keys()))
-    concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, verbose=verbose)
+    concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
