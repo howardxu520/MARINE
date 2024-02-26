@@ -338,33 +338,11 @@ def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
                                   paired_end=paired_end, verbose=verbose)
 
+    # Use an inner join to filter out any sites for which coverage was not found... this is expected in bulk processing,
+    # where certain positions might be specified that are not within the bam for the specific job.
     edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
     
-    # Filter out any sites for which coverage was not found... this is expected in bulk processing,
-    # where certain positions might be specified that are not within the bam for the specific job.
     return edit_info_and_coverage_joined
-
-"""
-edit_info_and_coverage_joined_cleaned = edit_info_and_coverage_joined[~edit_info_and_coverage_joined.coverage.isna()]
-except Exception as e:
-    
-    print(e, 
-          
-          "contig is {}\n output_folder is {}\n edit_info_and_coverage_joined columns are {}\
-    \ncoverage_df columns are {}, number of edit_info_and_coverage_joined rows is {}\nnumber of coverage_df rows is {}\n,number of edit_info_df rows is {}".format(
-        contig,
-        output_folder,
-        edit_info_and_coverage_joined.columns,
-        coverage_df.columns,
-        len(edit_info_and_coverage_joined),
-        len(coverage_df),
-        len(edit_info_df)
-    )) 
-    
-    
-    return 
-"""
-        
     
 
 

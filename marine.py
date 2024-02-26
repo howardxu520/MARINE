@@ -100,7 +100,6 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                                       barcode_tag=barcode_tag,
                                                                                       number_of_expected_bams=number_of_expected_bams
                                                                                      )
-    print(edit_info_grouped_per_contig_combined.get('chr10_49'))
     
     if verbose:
         print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
