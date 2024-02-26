@@ -268,6 +268,8 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(get_edit_info_for_barcode_in_contig_wrapper, coverage_counting_job_params):
                 pbar.update()
+
+                #print(_.columns)
                 results.append(_)
 
                 total_contigs += 1
@@ -300,12 +302,20 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
 
     num_splits = len(splits)
     # print("Grouping edit information outputs by contig...")
+    if num_splits > 500:
+        interval = 400
+    else:
+        interval = 10
+    
     for i, split in enumerate(splits):
-        if i%10 == 0:
-            print("\t{}/{}...".format(i, num_splits))
+        if i%interval == 0:
+            print("\tsplit {}, {}/{}...".format(split, i, num_splits))
 
         contig = split.split("_")[0]
 
+        #if split not in ["chr10_049_40975466_41811700"]:
+        #    continue
+            
         edit_info_file = '{}/edit_info/{}_edit_info.tsv'.format(output_folder, split)
         edit_info_df = pd.read_csv(edit_info_file, sep='\t')
         edit_info_df['contig'] = edit_info_df['contig'].astype(str)
@@ -314,6 +324,9 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
         edit_info_df['mapping_quality'] = edit_info_df['mapping_quality'].astype(int)
         edit_info_df['dist_from_end'] = edit_info_df['dist_from_end'].astype(int)
 
+        if split == "chr10_049_40975466_41811700":
+            print("split {} length: {}".format(split, len(edit_info_df)))
+            
         edit_info = pl.from_pandas(edit_info_df) 
 
         if barcode_tag == 'CB':

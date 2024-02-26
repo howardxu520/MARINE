@@ -322,14 +322,6 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
-
-    #print("For contig {}, started running get_coverage_df...".format(contig))
-    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
-                                  paired_end=paired_end, verbose=verbose)
-    #print("\t\t\tFor contig {}, finished running get_coverage_df...".format(contig))
-
-    #coverage_df.columns = ['coverage']
-    
     edit_info = edit_info.with_columns(
     pl.concat_str(
         [
@@ -338,10 +330,42 @@ def get_edit_info_for_barcode_in_contig_wrapper(parameters):
         ],
         separator=":",
     ).alias("barcode_position"))
-    
+
     edit_info_df = edit_info.to_pandas()
     edit_info_df.index = edit_info_df['barcode_position']
-    return edit_info_df.join(coverage_df)
+    
+    
+    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
+                                  paired_end=paired_end, verbose=verbose)
+
+    edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
+    
+    # Filter out any sites for which coverage was not found... this is expected in bulk processing,
+    # where certain positions might be specified that are not within the bam for the specific job.
+    return edit_info_and_coverage_joined
+
+"""
+edit_info_and_coverage_joined_cleaned = edit_info_and_coverage_joined[~edit_info_and_coverage_joined.coverage.isna()]
+except Exception as e:
+    
+    print(e, 
+          
+          "contig is {}\n output_folder is {}\n edit_info_and_coverage_joined columns are {}\
+    \ncoverage_df columns are {}, number of edit_info_and_coverage_joined rows is {}\nnumber of coverage_df rows is {}\n,number of edit_info_df rows is {}".format(
+        contig,
+        output_folder,
+        edit_info_and_coverage_joined.columns,
+        coverage_df.columns,
+        len(edit_info_and_coverage_joined),
+        len(coverage_df),
+        len(edit_info_df)
+    )) 
+    
+    
+    return 
+"""
+        
+    
 
 
 def sort_bam(bam_file_name):
