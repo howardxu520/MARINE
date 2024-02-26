@@ -199,7 +199,8 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode,
         return [p for p in positions_for_barcode if p > min_pos and p < max_pos]
 
     except Exception as e:
-        sys.stderr.write('{}, {}, {}, {}, {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath))
+        sys.stderr.write('{}, {}, {}, {}, {}, regex: {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath, edit_info_filepath_regex))
+        return []
         
 def check_read(read):
     return True
@@ -270,7 +271,11 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         if not barcode_tag:
             #print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
             positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=verbose)
-            num_positions = len(positions_for_barcode)
+            try:
+                num_positions = len(positions_for_barcode)
+            except Exception as e:
+                print(e, "contig {} output_folder {} positions_for_barcode {}".format(contig, output_folder, positions_for_barcode))
+                
             #print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
         for i, pos in enumerate(positions_for_barcode):

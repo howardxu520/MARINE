@@ -503,7 +503,7 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=160,
+        num_intervals_per_contig=250,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
@@ -512,5 +512,5 @@ if __name__ == '__main__':
         min_dist_from_end = min_dist_from_end,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=160
+        number_of_expected_bams=250
        )
