@@ -268,6 +268,8 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(get_edit_info_for_barcode_in_contig_wrapper, coverage_counting_job_params):
                 pbar.update()
+
+                #print(_.columns)
                 results.append(_)
 
                 total_contigs += 1
@@ -300,9 +302,14 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
 
     num_splits = len(splits)
     # print("Grouping edit information outputs by contig...")
+    if num_splits > 500:
+        interval = 400
+    else:
+        interval = 10
+    
     for i, split in enumerate(splits):
-        if i%10 == 0:
-            print("\t{}/{}...".format(i, num_splits))
+        if i%interval == 0:
+            print("\tsplit {}, {}/{}...".format(split, i, num_splits))
 
         contig = split.split("_")[0]
 

@@ -100,7 +100,7 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                                       barcode_tag=barcode_tag,
                                                                                       number_of_expected_bams=number_of_expected_bams
                                                                                      )
-
+    
     if verbose:
         print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
     
@@ -193,7 +193,24 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     
     logging_folder = "{}/metadata/".format(output_folder)
     make_folder(logging_folder)
-    
+
+    with open('{}/manifest.txt'.format(logging_folder), 'w') as f:
+        f.write('bam_filepath\t{}\n'.format(bam_filepath)) 
+        f.write('annotation_bedfile_path\t{}\n'.format(annotation_bedfile_path))
+        f.write('output_folder\t{}\n'.format(output_folder))  
+        f.write('reverse_stranded\t{}\n'.format(reverse_stranded))  
+        f.write('barcode_tag\t{}\n'.format(barcode_tag))  
+        f.write('barcode_whitelist_file\t{}\n'.format(barcode_whitelist_file))  
+        f.write('contigs\t{}\n'.format(contigs))  
+        f.write('num_intervals_per_contig\t{}\n'.format(num_intervals_per_contig))  
+        f.write('verbose\t{}\n'.format(verbose))
+        f.write('cores\t{}\n'.format(cores))
+        f.write('number_of_expected_bams\t{}\n'.format(number_of_expected_bams))
+        f.write('paired_end\t{}\n'.format(paired_end))
+        f.write('min_base_quality\t{}\n'.format(min_base_quality))
+        f.write('min_dist_from_end\t{}\n'.format(min_base_quality))
+
+                
     
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
@@ -296,38 +313,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
 
         
-        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
-
-        pretty_print("Filtering edited sites", style='~')
-        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
-    
-        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
-            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
-
-
-        print("Deduplicating....")
-        distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "mapping_quality",
-            "coverage"
-        ]
-        all_edit_info_unique_position_with_coverage_deduped_df = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
-            distinguishing_columns)[distinguishing_columns]
-        
-        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_deduped_df)))
-        all_edit_info_unique_position_with_coverage_deduped_df.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                         sep='\t')
-        
-
-    
     # Check if filtering step finished
     final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
     final_path_already_exists = False
@@ -340,9 +325,42 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     # Filtering steps
     if not final_path_already_exists:
         print("Filtering..")
-        
         if filtering_only:
-            all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+            all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
+
+        pretty_print("Filtering edited sites", style='~')
+        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
+        
+        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
+            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
+            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
+        
+        
+        print("Deduplicating....")
+        distinguishing_columns = [
+            "barcode",
+            "contig",
+            "position",
+            "ref",
+            "alt",
+            "read_id",
+            "strand",
+            "mapping_quality",
+            "coverage"
+        ]
+        all_edit_info_filtered_deduped = all_edit_info_filtered.drop_duplicates(
+            distinguishing_columns)[distinguishing_columns]
+        
+        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
+        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
+        pretty_print("\tNumber of edits after deduplicating:\n\t{}".format(len(all_edit_info_filtered_deduped)))
+
+        
+        all_edit_info_filtered_deduped.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
+                                         sep='\t')
+        
+            
+        all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
             
     
         all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
@@ -485,7 +503,7 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=200,
+        num_intervals_per_contig=250,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
@@ -494,5 +512,5 @@ if __name__ == '__main__':
         min_dist_from_end = min_dist_from_end,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=200
+        number_of_expected_bams=250
        )

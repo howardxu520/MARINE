@@ -199,7 +199,8 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode,
         return [p for p in positions_for_barcode if p > min_pos and p < max_pos]
 
     except Exception as e:
-        sys.stderr.write('{}, {}, {}, {}, {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath))
+        sys.stderr.write('{}, {}, {}, {}, {}, regex: {}\n'.format(e, contig, contig_base, contig_index, edit_info_filepath, edit_info_filepath_regex))
+        return []
         
 def check_read(read):
     return True
@@ -270,7 +271,11 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         if not barcode_tag:
             #print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
             positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=verbose)
-            num_positions = len(positions_for_barcode)
+            try:
+                num_positions = len(positions_for_barcode)
+            except Exception as e:
+                print(e, "contig {} output_folder {} positions_for_barcode {}".format(contig, output_folder, positions_for_barcode))
+                
             #print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
             
         for i, pos in enumerate(positions_for_barcode):
@@ -322,14 +327,6 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
-
-    #print("For contig {}, started running get_coverage_df...".format(contig))
-    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
-                                  paired_end=paired_end, verbose=verbose)
-    #print("\t\t\tFor contig {}, finished running get_coverage_df...".format(contig))
-
-    #coverage_df.columns = ['coverage']
-    
     edit_info = edit_info.with_columns(
     pl.concat_str(
         [
@@ -338,10 +335,20 @@ def get_edit_info_for_barcode_in_contig_wrapper(parameters):
         ],
         separator=":",
     ).alias("barcode_position"))
-    
+
     edit_info_df = edit_info.to_pandas()
     edit_info_df.index = edit_info_df['barcode_position']
-    return edit_info_df.join(coverage_df)
+    
+    
+    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
+                                  paired_end=paired_end, verbose=verbose)
+
+    # Use an inner join to filter out any sites for which coverage was not found... this is expected in bulk processing,
+    # where certain positions might be specified that are not within the bam for the specific job.
+    edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
+    
+    return edit_info_and_coverage_joined
+    
 
 
 def sort_bam(bam_file_name):
