@@ -1,4 +1,8 @@
-# sailor2
+# MARINE
+
+Adding samtools to a bam.
+samtools calmd -bAr input.bam /tscc/projects/ps-yeolab4/NCRCRG/refs/refdata-gex-GRCh38-2020-A/fasta/genome.fa > output.md.bam
+
 
 Adding MD tag to bulk file:
 

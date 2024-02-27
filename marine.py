@@ -431,7 +431,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--barcode_tag', type=str, default=None)
     
-    parser.add_argument('--min_dist_from_end', type=int, default=10)
+    parser.add_argument('--min_dist_from_end', type=int, default=0)
 
     parser.add_argument('--min_base_quality', type=int, default=15)
     parser.add_argument('--contigs', type=str, default='all')
@@ -503,7 +503,7 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=250,
+        num_intervals_per_contig=120,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
@@ -512,5 +512,5 @@ if __name__ == '__main__':
         min_dist_from_end = min_dist_from_end,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=250
+        number_of_expected_bams=120
        )

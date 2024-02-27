@@ -6,8 +6,7 @@ python \
 /tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/cellranger-GRCh38-3.0.0.annotation.genes.bed \
 --output_folder \
 /tscc/projects/ps-yeolab3/ekofman/sailor2/tests/singlecell_tests/only_5_cells_test/ \
---min_dist_from_end \
-0 \
+--contigs '9' --min_dist_from_end 0 \
 --min_base_quality \
 0 \
 --cores \
