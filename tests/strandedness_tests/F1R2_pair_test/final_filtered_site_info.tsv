@@ -1,0 +1,4 @@
+site_id	barcode	contig	position	ref	alt	strand	count	coverage	conversion
+no_barcode_chr17_43044352_G_A_+	no_barcode	chr17	43044352	G	A	+	1	1.0	G>A
+no_barcode_chr17_43044331_A_C_+	no_barcode	chr17	43044331	A	C	+	1	1.0	A>C
+no_barcode_chr17_43044356_T_G_+	no_barcode	chr17	43044356	T	G	+	1	1.0	T>G
