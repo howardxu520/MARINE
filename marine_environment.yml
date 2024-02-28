@@ -6,6 +6,7 @@ channels:
   - r
   - defaults
 dependencies:
+  - pybedtools
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
   - abseil-cpp=20211102.0=h27087fc_1
