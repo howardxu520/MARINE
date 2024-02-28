@@ -35,8 +35,8 @@ def incorporate_insertions_and_deletions(aligned_sequence, cigar_tuples, inserti
     positions_of_deletions = []
     
     for mod, num_bases in cigar_tuples:
-        if mod == 0:
-            # match
+        if mod in [0, 7, 8]:
+            # 0 = alignment match, 7 = sequence match, 8 = sequence mismatch
             new_seq += aligned_sequence[current_pos:current_pos+num_bases]
             current_pos += num_bases
         if mod in [1]:
