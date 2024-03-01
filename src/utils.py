@@ -43,6 +43,9 @@ def make_edit_finding_jobs(bampath, output_folder, reverse_stranded=True, barcod
         contigs_to_use = set(contigs)
     for contig in contig_lengths_dict.keys():
         # Skip useless contigs
+        if len(contig) > 5:
+            continue
+            
         if contig == 'Stamp':# or contig != '17':
             continue
             
@@ -53,7 +56,7 @@ def make_edit_finding_jobs(bampath, output_folder, reverse_stranded=True, barcod
         
         contig_length = contig_lengths_dict.get(contig)
         intervals_for_contig = get_intervals(contig, contig_lengths_dict, num_intervals_per_contig)
-        print('\t\tintervals_for_contig: {}'.format(intervals_for_contig))
+        #print('\t\tintervals_for_contig: {}'.format(intervals_for_contig))
         # Set up for pool
         for split_index, interval in enumerate(intervals_for_contig):
             split_index = str(split_index).zfill(3)
