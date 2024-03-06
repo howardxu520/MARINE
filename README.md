@@ -12,6 +12,7 @@ Use the provided conda environment to ensure you have all required dependencies 
 
 ```
 conda env create  --file=marine_environment.yml
+conda activate marine_environment
 ```
 
 Notes:
