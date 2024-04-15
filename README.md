@@ -8,6 +8,13 @@ samtools calmd -bAr input.bam reference_genome.fa > input.md.bam
 samtools index input.md.bam
 ```
 
+Use the provided conda environment to ensure you have all required dependencies for MARINE:
+
+```
+conda env create  --file=marine_environment.yml
+conda activate marine_environment
+```
+
 Notes:
 * Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
 * The more cores used, the faster MARINE will run
