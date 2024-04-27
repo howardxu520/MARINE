@@ -191,7 +191,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     print_marine_logo()
     
     
-    logging_folder = "{}/metadata/".format(output_folder)
+    logging_folder = "{}/metadata".format(output_folder)
     make_folder(logging_folder)
 
     with open('{}/manifest.txt'.format(logging_folder), 'w') as f:
@@ -400,6 +400,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
         conversion = 'C>T'
         sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion)
+        sailor_sites = sailor_sites.drop_duplicates()
         sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
             output_folder, 
             conversion.replace(">", "-")), 
