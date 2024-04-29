@@ -176,7 +176,10 @@ def remove_file_if_exists(file_path):
         
 def make_folder(folder_path):
     if not os.path.exists(folder_path):
-        os.mkdir(folder_path)
+        try:
+            os.mkdir(folder_path)
+        except Exception as e:
+            print(folder_path, e)
 
 def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)

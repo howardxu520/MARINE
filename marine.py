@@ -1,4 +1,5 @@
 import argparse
+from glob import glob
 from multiprocessing import Pool
 import multiprocessing
 import os
@@ -162,36 +163,64 @@ def calculate_sailor_score(sailor_row):
     return confidence
     
 
-def get_sailor_sites(final_site_level_information_df, conversion="C>T"):
+def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_coverage=False):
     final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['feature_conversion'] == conversion]
-    final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + final_site_level_information_df['coverage'].astype(str)
 
-    weird_sites = final_site_level_information_df[
+    if skip_coverage:
+        # Case where we want to skip coverage counting, we will just set it to -1 in the sailor-style output
+        coverage_col = "-1"
+        weird_sites = pd.DataFrame()
+    else:
+        # Normally, assume that there is a coverage column
+        coverage_col = final_site_level_information_df['coverage'].astype(str)
+
+        weird_sites = final_site_level_information_df[
             (final_site_level_information_df.coverage == 0) |\
             (final_site_level_information_df.coverage < final_site_level_information_df['count'])]
     
-    print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
-        len(weird_sites)))
-          
-    final_site_level_information_df = final_site_level_information_df[
-    (final_site_level_information_df.coverage > 0) & \
-    (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
-    ]
+        print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
+            len(weird_sites)))
+              
+        final_site_level_information_df = final_site_level_information_df[
+        (final_site_level_information_df.coverage > 0) & \
+        (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
+        ]
+
     
-    final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
+    final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + coverage_col
+
+    if skip_coverage:
+        final_site_level_information_df['score'] = -1
+    else:
+        final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
+
     final_site_level_information_df['start'] = final_site_level_information_df['position']
     final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
     
     final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'feature_strand']]
     return final_site_level_information_df, weird_sites
     
+
+def collate_edit_info_shards(output_folder):
+    edit_info_folder = "{}/edit_info".format(output_folder)
+    edit_info_files = glob("{}/*".format(edit_info_folder))
+    print("\tFound {} files in {}...".format(len(edit_info_files), edit_info_folder))
+    all_dfs = []
+    for f in edit_info_files:
+        edit_info_df = pd.read_csv(f, sep='\t')
+        all_dfs.append(edit_info_df)
+        
+    collated_df = pd.concat(all_dfs)
+    print("\tShape of collated edit info df: {}".format(collated_df.shape))
+    print("\tColumns of collated edit info df: {}".format(collated_df.columns))
+    return collated_df
     
 def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64, number_of_expected_bams=4):
     
     print_marine_logo()
     
     
-    logging_folder = "{}/metadata/".format(output_folder)
+    logging_folder = "{}/metadata".format(output_folder)
     make_folder(logging_folder)
 
     with open('{}/manifest.txt'.format(logging_folder), 'w') as f:
@@ -211,7 +240,12 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         f.write('min_dist_from_end\t{}\n'.format(min_base_quality))
 
                 
-    
+    if not barcode_tag:
+        skip_coverage = True
+        pretty_print("Will skip coverage calculcation...")
+    else:
+        skip_coverage = False
+        
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
             barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
@@ -238,19 +272,21 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
         # REMOVE
         #sys.exit()
-        
-        # Make a subfolder into which the split bams will be placed
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
-        pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
-        total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
-        pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+        if not skip_coverage:
+            # Make a subfolder into which the split bams will be placed
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
+            pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
         
-    if not filtering_only:
+            total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
+            total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
+            pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+
+        
+    if not filtering_only and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites", style='~')
@@ -312,7 +348,13 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
 
-        
+    if skip_coverage:
+        # If we skip coverage steps, we have to just collate edit info results from the edit finding steps into one giant 
+        # final_edit_info.tsv file (where coverage is None)
+        pretty_print("Skipped coverage, so combining edit info alone...")
+        all_edit_info_unique_position_with_coverage_df = collate_edit_info_shards(output_folder)
+
+    
     # Check if filtering step finished
     final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
     final_path_already_exists = False
@@ -346,8 +388,10 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             "read_id",
             "strand",
             "mapping_quality",
-            "coverage"
         ]
+        if not skip_coverage:
+            distinguishing_columns.append("coverage")
+            
         all_edit_info_filtered_deduped = all_edit_info_filtered.drop_duplicates(
             distinguishing_columns)[distinguishing_columns]
         
@@ -365,7 +409,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     
         all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
         
-        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl)
+        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=skip_coverage)
     
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
         
@@ -399,7 +443,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         # 1       629309  629310  2.8306e-05      1,1043  +
 
         conversion = 'C>T'
-        sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion)
+        sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=skip_coverage)
+        sailor_sites = sailor_sites.drop_duplicates()
         sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
             output_folder, 
             conversion.replace(">", "-")), 

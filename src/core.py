@@ -368,26 +368,29 @@ def add_site_id(all_edit_info):
 
 
 
-def get_count_and_coverage_per_site(all_edit_info):
-    coverage_df = all_edit_info.group_by("site_id").agg(pl.col("coverage").max())
+def get_count_and_coverage_per_site(all_edit_info, skip_coverage=False):
     num_edits_df = all_edit_info.group_by("site_id").count()
-    return num_edits_df.join(coverage_df, on='site_id')
+
+    if not skip_coverage:
+        coverage_df = all_edit_info.group_by("site_id").agg(pl.col("coverage").max())
+        return num_edits_df.join(coverage_df, on='site_id')
+    else:
+        return num_edits_df
 
 
 
-def generate_site_level_information(all_edit_info):
+def generate_site_level_information(all_edit_info, skip_coverage=False):
     number_of_edits = len(all_edit_info)
 
     all_edit_info = add_site_id(all_edit_info)
 
-    number_of_sites = len(all_edit_info.group_by("site_id").agg(pl.col("coverage").unique()))
-
-    count_and_coverage_at_site_df = get_count_and_coverage_per_site(all_edit_info)
-
     identifying_values = ["site_id", "barcode", "contig", "position", "ref", "alt", "strand"]
 
     unique_rows_df = all_edit_info.select(identifying_values).unique(subset=identifying_values, maintain_order=True)
+
+    count_and_coverage_at_site_df = get_count_and_coverage_per_site(all_edit_info, skip_coverage=skip_coverage)
     final_site_information_df = unique_rows_df.join(count_and_coverage_at_site_df, on='site_id')
+
     final_site_information_df = final_site_information_df.with_columns(
         pl.concat_str(
             [
@@ -396,8 +399,10 @@ def generate_site_level_information(all_edit_info):
             ],
             separator=">",
         ).alias("conversion"))
-    
-    assert(len(final_site_information_df) == number_of_sites)
+
+    if not skip_coverage:
+        number_of_sites = len(all_edit_info.group_by("site_id").agg(pl.col("coverage").unique()))
+        assert(len(final_site_information_df) == number_of_sites)
     
 
     return final_site_information_df
