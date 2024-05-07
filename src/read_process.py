@@ -113,6 +113,12 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
         
     if not read_barcode:
         return 'no_{}_tag'.format(barcode_tag), [], {}
+
+    # For 10x data, exclude reads that are not counted towards cellranger UMI read counts
+    # https://kb.10xgenomics.com/hc/en-us/articles/115003710383-Which-reads-are-considered-for-UMI-counting-by-Cell-Ranger
+    if read.has_tag('xf'):
+        if not read.get_tag('xf') == 25:
+            return 'xf:{}'.format(read.get_tag('xf')), [], {}
     
     is_reverse = read.is_reverse
         
