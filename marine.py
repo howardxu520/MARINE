@@ -374,7 +374,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
         
         all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-            (all_edit_info_unique_position_with_coverage_df["base_quality"] > min_base_quality) & 
+            (all_edit_info_unique_position_with_coverage_df["base_quality"] >= min_base_quality) & 
             (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
         
         
@@ -434,25 +434,28 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     if final_annotated_path_already_exists:
         final_annotated_site_level_information_df = pd.read_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), 
                                                   sep='\t')
+        
         if sailor:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
 
-        # Output SAILOR-formatted file for use in FLARE downstream
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # 1       629275  629276  0.966040688     2,30    +
-        # 1       629309  629310  2.8306e-05      1,1043  +
+            # Output SAILOR-formatted file for use in FLARE downstream
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # 1       629275  629276  0.966040688     2,30    +
+            # 1       629309  629310  2.8306e-05      1,1043  +
+    
+            conversion = 'C>T'
+            sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=skip_coverage)
+            sailor_sites = sailor_sites.drop_duplicates()
 
-        conversion = 'C>T'
-        sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=skip_coverage)
-        sailor_sites = sailor_sites.drop_duplicates()
-        sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
-            output_folder, 
-            conversion.replace(">", "-")), 
-            header=False,
-            index=False,       
-            sep='\t')
-
-        weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
+            print("{} final deduplicated SAILOR-formatted sites".format(len(sailor_sites)))
+            sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+                output_folder, 
+                conversion.replace(">", "-")), 
+                header=False,
+                index=False,       
+                sep='\t')
+    
+            weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
                                          
     pretty_print("Done!", style="+")
     
