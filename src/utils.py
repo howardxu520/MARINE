@@ -31,7 +31,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     return contigs_to_write_bams_for
 
 
-def make_edit_finding_jobs(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False):
+def make_edit_finding_jobs(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, min_read_quality = 0):
     jobs = []
     
     samfile = pysam.AlignmentFile(bampath, "rb")
@@ -60,7 +60,7 @@ def make_edit_finding_jobs(bampath, output_folder, reverse_stranded=True, barcod
         # Set up for pool
         for split_index, interval in enumerate(intervals_for_contig):
             split_index = str(split_index).zfill(3)
-            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, reverse_stranded, barcode_tag, barcode_whitelist, verbose]
+            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, reverse_stranded, barcode_tag, barcode_whitelist, verbose, min_read_quality]
             jobs.append(parameters)
     return jobs
 
@@ -212,7 +212,7 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode,
 def check_read(read):
     return True
 
-def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, paired_end=False, verbose=False):
+def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, paired_end=False, verbose=False, min_read_quality = 0):
     if not paired_end:
         if verbose:
             print("~~~~~~\n!!!!SINGLE END!!!!!\n~~~~~~~`")
@@ -221,7 +221,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
         coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
                                                                     pos-1, 
                                                                     pos, 
-                                                                    quality_threshold=0,
+                                                                    quality_threshold=min_read_quality,
                                                                     read_callback='all'
                                                                    ))
         return coverage_at_pos
@@ -250,7 +250,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
         return coverage_at_pos
 
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
-                    verbose=False):
+                    verbose=False, min_read_quality = 0):
     
     bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
     contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
@@ -306,7 +306,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
                                                                             pos-1, 
                                                                             pos, 
-                                                                            quality_threshold=0,
+                                                                            quality_threshold=min_read_quality,
                                                                             read_callback='all'
                                                                            ))
 
@@ -318,7 +318,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 just_contig = contig.split('_')[0]
                 try:
                     coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
-                                                               paired_end=paired_end, verbose=verbose)
+                                                               paired_end=paired_end, verbose=verbose, min_read_quality = min_read_quality)
                                 
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
@@ -333,7 +333,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
 
 def get_edit_info_for_barcode_in_contig_wrapper(parameters):
-    edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
+    edit_info, contig, output_folder, barcode_tag, paired_end, verbose, min_read_quality = parameters
     edit_info = edit_info.with_columns(
     pl.concat_str(
         [
@@ -348,7 +348,7 @@ def get_edit_info_for_barcode_in_contig_wrapper(parameters):
     
     
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
-                                  paired_end=paired_end, verbose=verbose)
+                                  paired_end=paired_end, verbose=verbose, min_read_quality=min_read_quality)
 
     # Use an inner join to filter out any sites for which coverage was not found... this is expected in bulk processing,
     # where certain positions might be specified that are not within the bam for the specific job.

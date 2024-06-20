@@ -12,6 +12,7 @@ import sys
 from sys import getsizeof
 import time
 from tqdm import tqdm
+import tracemalloc
 
 sys.path.append('src/')
 
@@ -28,11 +29,11 @@ pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written
 from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
 
-from annotate import annotate_sites 
+from annotate import annotate_sites, get_strand_specific_conversion 
 
 
 def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
-                verbose=False, cores=64):
+                verbose=False, cores=64, min_read_quality = 0):
     
     pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
     
@@ -47,6 +48,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
         num_intervals_per_contig=num_intervals_per_contig, 
         verbose=verbose,
         cores=cores,
+        min_read_quality=min_read_quality
     )
     
     #print(overall_label_to_list_of_contents.keys())
@@ -96,7 +98,8 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
     
-def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4):
+def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
+                       min_read_quality=0):
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
                                                                                       barcode_tag=barcode_tag,
                                                                                       number_of_expected_bams=number_of_expected_bams
@@ -109,7 +112,8 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             barcode_tag=barcode_tag,
                                                                             paired_end=paired_end,
                                                                             verbose=verbose,
-                                                                            processes=cores
+                                                                            processes=cores,
+                                                                            min_read_quality=min_read_quality
                                                                            )
     
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
@@ -215,7 +219,7 @@ def collate_edit_info_shards(output_folder):
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_dist_from_end = 10, cores = 64, number_of_expected_bams=4):
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4):
     
     print_marine_logo()
     
@@ -237,14 +241,15 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         f.write('number_of_expected_bams\t{}\n'.format(number_of_expected_bams))
         f.write('paired_end\t{}\n'.format(paired_end))
         f.write('min_base_quality\t{}\n'.format(min_base_quality))
+        f.write('min_read_quality\t{}\n'.format(min_read_quality))
         f.write('min_dist_from_end\t{}\n'.format(min_base_quality))
 
                 
     if not barcode_tag:
-        skip_coverage = True
-        pretty_print("Will skip coverage calculcation...")
+        tag_based_coverage = False
+        pretty_print("Not using tag-based coverage calculations...")
     else:
-        skip_coverage = False
+        tag_based_coverage = False
         
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
@@ -266,14 +271,15 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             contigs,
             num_intervals_per_contig,
             verbose,
-            cores=cores
+            cores=cores,
+            min_read_quality=min_read_quality
         )
 
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
         # REMOVE
         #sys.exit()
 
-        if not skip_coverage:
+        if not tag_based_coverage:
             # Make a subfolder into which the split bams will be placed
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
@@ -286,17 +292,18 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
         
-    if not filtering_only and not skip_coverage:
+    if not filtering_only and not tag_based_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        pretty_print("Calculating coverage at edited sites", style='~')
+        pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
 
         results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                barcode_tag=barcode_tag, 
                                                                                paired_end=paired_end,
                                                                                verbose=verbose,
                                                                                cores=cores,
-                                                                               number_of_expected_bams=number_of_expected_bams
+                                                                               number_of_expected_bams=number_of_expected_bams,
+                                                                               min_read_quality=min_read_quality
                                                                               )
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
@@ -344,8 +351,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 + '_' + all_edit_info_unique_position_df['barcode']
 
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
-        
-        
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
 
     if skip_coverage:
@@ -389,7 +394,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             "strand",
             "mapping_quality",
         ]
-        if not skip_coverage:
+        if not tag_based_coverage:
             distinguishing_columns.append("coverage")
             
         all_edit_info_filtered_deduped = all_edit_info_filtered.drop_duplicates(
@@ -399,22 +404,33 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
         pretty_print("\tNumber of edits after deduplicating:\n\t{}".format(len(all_edit_info_filtered_deduped)))
 
+        if max_edits_per_read:
+            pretty_print("\t\tFiltering out reads with more than {} edits...".format(max_edits_per_read))
+            read_edits = all_edit_info_filtered_deduped.groupby('read_id').count().sort_values('barcode')
+            all_edit_info_filtered_deduped = all_edit_info_filtered_deduped[all_edit_info_filtered_deduped.read_id.isin(read_edits[read_edits['barcode'] <= max_edits_per_read].index)]
         
         all_edit_info_filtered_deduped.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                         sep='\t')
+                                         sep='\t', index=False)
         
             
         all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
             
     
         all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
-        
-        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=skip_coverage)
-    
+
+        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=tag_based_coverage)
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
-        
+        pretty_print("Writing sites...\n")
         final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   separator='\t')
+
+        
+        pretty_print("Adding strand-specific conversion...\n")
+        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
+        final_site_level_information_df['strand_conversion'] = final_site_level_information_df.apply(get_strand_specific_conversion, args=(reverse_stranded,), axis=1)
+        final_site_level_information_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t', index=False)
         final_path_already_exists = True
         
     if not annotation_bedfile_path:
@@ -444,7 +460,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             # 1       629309  629310  2.8306e-05      1,1043  +
     
             conversion = 'C>T'
-            sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=skip_coverage)
+            sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=tag_based_coverage)
             sailor_sites = sailor_sites.drop_duplicates()
 
             print("{} final deduplicated SAILOR-formatted sites".format(len(sailor_sites)))
@@ -456,7 +472,18 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                 sep='\t')
     
             weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
-                                         
+
+    # Check memory usage
+    current, peak = tracemalloc.get_traced_memory()
+
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'peak_memory_mb: {peak/1e6}\n') 
+        f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
+
+    print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
+    print(f'Time elapsed: {time.time()-start_time:.2f}s')
+
+    
     pretty_print("Done!", style="+")
     
 if __name__ == '__main__':
@@ -483,10 +510,12 @@ if __name__ == '__main__':
 
     parser.add_argument('--min_base_quality', type=int, default=15)
     parser.add_argument('--contigs', type=str, default='all')
+    parser.add_argument('--min_read_quality', type=int, default=0)
     
     parser.add_argument('--sailor', dest='sailor', action='store_true')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--paired_end', dest='paired_end', action='store_true')
+    parser.add_argument('--max_edits_per_read', type=int, default=None)
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
@@ -508,7 +537,9 @@ if __name__ == '__main__':
     
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
+    min_read_quality = args.min_read_quality
     min_dist_from_end = args.min_dist_from_end
+    max_edits_per_read = args.max_edits_per_read
     
     if cores is None:
         cores = 16
@@ -530,7 +561,9 @@ if __name__ == '__main__':
                   "\tAnnotation only:\t{}".format(annotation_only),
                   "\tSailor outputs:\t{}".format(sailor),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
+                  "\tMinimum read quality:\t{}".format(min_read_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
+                  "\tmax_edits_per_read:\t{}".format(max_edits_per_read),
                   "\tContigs:\t{}".format(contigs),
                   "\tCores:\t{}".format(cores),
                   "\tVerbose:\t{}".format(verbose)
@@ -542,6 +575,8 @@ if __name__ == '__main__':
     else:
         contigs = contigs.split(",")
 
+    start_time = time.time()
+    tracemalloc.start()
     
     run(bam_filepath, 
         annotation_bedfile_path,
@@ -551,14 +586,18 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=120,
+        num_intervals_per_contig=500,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
         sailor=sailor,
         min_base_quality = min_base_quality, 
+        min_read_quality = min_read_quality,
         min_dist_from_end = min_dist_from_end,
+        max_edits_per_read = max_edits_per_read,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=120
+        number_of_expected_bams=500
        )
+    
+    
