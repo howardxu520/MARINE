@@ -179,7 +179,7 @@ def make_folder(folder_path):
         try:
             os.mkdir(folder_path)
         except Exception as e:
-            print(folder_path, e)
+            sys.stderr.write(folder_path, e, '\n')
 
 def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)
@@ -228,7 +228,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
     else:
         if verbose:
             print("~~~~~~\n!!!!PAIRED END!!!!!\npos: {}\n {}:{}~~~~~~~`".format(contig_bam, just_contig, pos))
-            
+        
         # For paired-end sequencing, it is more accurate to use the pileup function
         pileupcolumn_iter = samfile_for_barcode.pileup(just_contig, 
                                                        pos-1, 
@@ -251,17 +251,25 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
 
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
                     verbose=False, min_read_quality = 0):
-    
-    bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
-    contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
 
-    # print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
+    if barcode_tag:
+        # Single-cell, contig will include barcode ending-based suffix 
+        bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
+        contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
+    else:
+        # Bulk -- no barcode ending-based suffixes, just splits
+        just_contig = contig.split('_')[0]
+        bam_subfolder = "{}/split_bams/{}".format(output_folder, just_contig)
+        contig_bam = '{}/{}.bam.sorted.bam'.format(bam_subfolder, contig)
+
+    #print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
     try:
         index_bam(contig_bam)
         samfile_for_barcode = pysam.AlignmentFile(contig_bam, "rb")
     except OSError:  # If MARINE cannot find a bam to index, return empty
         return pd.DataFrame(columns=['coverage', 'source'])
-    # print("Contig {}. Loaded bamfile...".format(contig))
+        
+    #print("Contig {}. Loaded bamfile...".format(contig))
     unique_barcodes = sorted(list(edit_info.unique("barcode")["barcode"]))
     coverage_dict = defaultdict(lambda:{})
     
@@ -275,24 +283,11 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
                     
         num_positions = len(positions_for_barcode)
-        if not barcode_tag:
-            #print("{}:\tTotal edit site positions: {}".format(contig, num_positions))
-            positions_for_barcode = only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=verbose)
-            try:
-                num_positions = len(positions_for_barcode)
-            except Exception as e:
-                print(e, "contig {} output_folder {} positions_for_barcode {}".format(contig, output_folder, positions_for_barcode))
-                
-            #print("\t{}:\tFiltered edit site positions: {}".format(contig, num_positions))
-            
         for i, pos in enumerate(positions_for_barcode):
             
-            if not barcode_tag:
-                if i%10000 == 0:
-                    pass
-                    #print("\t{}:\tCoverage computed at {}/{} positions...".format(contig, i, num_positions))
-            
             if barcode_tag:
+                # For single-cell
+                
                 barcode_specific_contig = '{}_{}'.format(contig, barcode)
                 # Alter from 3_C_AAACCCAAGAACTTCC-1, for example, to 3_AAACCCAAGAACTTCC-1'
                 barcode_specific_contig_split = barcode_specific_contig.split("_")
@@ -314,6 +309,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
                 
             else:
+                
                 # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
                 just_contig = contig.split('_')[0]
                 try:
@@ -345,7 +341,6 @@ def get_coverage_wrapper(parameters):
 
     edit_info_df = edit_info.to_pandas()
     edit_info_df.index = edit_info_df['barcode_position']
-    
     
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
                                   paired_end=paired_end, verbose=verbose, min_read_quality=min_read_quality)

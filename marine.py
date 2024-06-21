@@ -101,18 +101,15 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
                        min_read_quality=0, bam_filepath=''):
 
-    if barcode_tag:
-        # Single-cell or long read version:
-        edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
-                                                                                          barcode_tag=barcode_tag,
-                                                                                          number_of_expected_bams=number_of_expected_bams
-                                                                                         )
-        
-        if verbose:
-            print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
+    # Single-cell or long read version:
+    edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
+                                                                                      barcode_tag=barcode_tag,
+                                                                                      number_of_expected_bams=number_of_expected_bams
+                                                                                     )
+    
+    if verbose:
+        print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
 
-    else:
-        print("Need to make for bulk...")
         
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
                                                                             barcode_tag=barcode_tag,
@@ -174,7 +171,7 @@ def calculate_sailor_score(sailor_row):
     
 
 def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_coverage=False):
-    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['feature_conversion'] == conversion]
+    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['strand_conversion'] == conversion]
 
     if skip_coverage:
         # Case where we want to skip coverage counting, we will just set it to -1 in the sailor-style output
@@ -207,7 +204,7 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_cov
     final_site_level_information_df['start'] = final_site_level_information_df['position']
     final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
     
-    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'feature_strand']]
+    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
     return final_site_level_information_df, weird_sites
     
 
@@ -250,14 +247,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         f.write('min_read_quality\t{}\n'.format(min_read_quality))
         f.write('min_dist_from_end\t{}\n'.format(min_base_quality))
 
-                
-    if not barcode_tag:
-        # Will just use samtools depth to get depths
-        skip_coverage = True
-        pretty_print("Will skip coverage calculcation...")
-    else:
-        # Will use split bams approach to get per-barcode coverage
-        skip_coverage = False
+    # Flag to turn of coverage calculation and column addition -- only needs to be turned off for debugging
+    skip_coverage = False
         
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
@@ -287,7 +278,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         # REMOVE
         #sys.exit()
 
-        if not skip_coverage:
+        if barcode_tag:
             # Make a subfolder into which the split bams will be placed
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))

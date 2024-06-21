@@ -193,7 +193,9 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
         make_folder(split_bams_subfolder)
         
         for barcode, read_list in read_lists_for_barcodes.items(): 
-            bam_file_name = '{}/{}_{}_{}_{}.bam'.format(split_bams_subfolder, contig, split_index, start, end)
+            make_folder('{}/{}'.format(split_bams_subfolder, contig))
+                        
+            bam_file_name = '{}/{}/{}_{}_{}_{}.bam'.format(split_bams_subfolder, contig, contig, split_index, start, end)
             header_string = str(samfile.header)
             write_bam_file(read_list, bam_file_name, header_string)
             
@@ -355,33 +357,31 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
         edit_info_df['dist_from_end'] = edit_info_df['dist_from_end'].astype(int)
 
         edit_info = pl.from_pandas(edit_info_df) 
-
+        
         if barcode_tag == 'CB':
-            suffix_options = ["A-1", "C-1", "G-1", "T-1"]
-        elif not barcode_tag:
-            # If we are not splitting up contigs by their barcode ending, instead let's do it by the random bucket assigned
-            # (See concat_and_write_bams function)
-            range_for_suffixes = number_of_expected_bams
-            suffix_options = range(0, range_for_suffixes)
-                    
-        for suffix in suffix_options:
-            if barcode_tag:
+            # For single-cell data we have to split the edit infos for each contig additionally by cell barcode 
+            # for the coverage calculation
+            suffix_options = ["A-1", "C-1", "G-1", "T-1"]     
+            for suffix in suffix_options:
                 edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
-            else:
-                edit_info_subset = edit_info
-                
-            edit_info_grouped_per_contig["{}_{}".format(contig, suffix)].append(edit_info_subset)
+                edit_info_grouped_per_contig["{}_{}".format(contig, suffix)].append(edit_info_subset)
 
+        else:
+            # For bulk data we don't have to do any filtering, the edits calculated for each split interval
+            # can be paired directly with the split bam for that interval
+            edit_info_grouped_per_contig["{}".format(split)].append(edit_info)
+        
         del edit_info_df
-    
+
     print("Done grouping! Concatenating ...")
     for contig, list_of_edit_info_dfs in edit_info_grouped_per_contig.items():
         edit_info_grouped_per_contig_combined[contig] = pl.concat(list_of_edit_info_dfs)
     print("Done concatenating!")
+        
     return edit_info_grouped_per_contig_combined
 
 
-import polars as pl
+
 
 
 
