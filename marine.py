@@ -99,15 +99,21 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
-                       min_read_quality=0):
-    edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
-                                                                                      barcode_tag=barcode_tag,
-                                                                                      number_of_expected_bams=number_of_expected_bams
-                                                                                     )
-    
-    if verbose:
-        print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
-    
+                       min_read_quality=0, bam_filepath=''):
+
+    if barcode_tag:
+        # Single-cell or long read version:
+        edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
+                                                                                          barcode_tag=barcode_tag,
+                                                                                          number_of_expected_bams=number_of_expected_bams
+                                                                                         )
+        
+        if verbose:
+            print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
+
+    else:
+        print("Need to make for bulk...")
+        
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
                                                                             barcode_tag=barcode_tag,
                                                                             paired_end=paired_end,
@@ -115,14 +121,14 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             processes=cores,
                                                                             min_read_quality=min_read_quality
                                                                            )
-    
+        
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
     total_seconds_for_contig_df.columns = ['seconds']
     total_seconds_for_contig_df['contig sections'] = total_seconds_for_contig_df.index
     total_seconds_for_contig_df.index = range(len(total_seconds_for_contig_df))
     
     return results, total_time, total_seconds_for_contig_df
-
+    
 
 def print_marine_logo():
     logo_lines = [
@@ -246,10 +252,12 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
                 
     if not barcode_tag:
-        tag_based_coverage = False
-        pretty_print("Not using tag-based coverage calculations...")
+        # Will just use samtools depth to get depths
+        skip_coverage = True
+        pretty_print("Will skip coverage calculcation...")
     else:
-        tag_based_coverage = False
+        # Will use split bams approach to get per-barcode coverage
+        skip_coverage = False
         
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
@@ -279,7 +287,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         # REMOVE
         #sys.exit()
 
-        if not tag_based_coverage:
+        if not skip_coverage:
             # Make a subfolder into which the split bams will be placed
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
@@ -292,7 +300,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
         
-    if not filtering_only and not tag_based_coverage:
+    if not filtering_only:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
@@ -303,7 +311,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                                verbose=verbose,
                                                                                cores=cores,
                                                                                number_of_expected_bams=number_of_expected_bams,
-                                                                               min_read_quality=min_read_quality
+                                                                               min_read_quality=min_read_quality,
+                                                                               bam_filepath=bam_filepath
                                                                               )
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
@@ -351,6 +360,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 + '_' + all_edit_info_unique_position_df['barcode']
 
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
+        
+        
         all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
 
     if skip_coverage:
@@ -394,7 +405,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             "strand",
             "mapping_quality",
         ]
-        if not tag_based_coverage:
+        if not skip_coverage:
             distinguishing_columns.append("coverage")
             
         all_edit_info_filtered_deduped = all_edit_info_filtered.drop_duplicates(
@@ -418,7 +429,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     
         all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
 
-        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=tag_based_coverage)
+        final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=skip_coverage)
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
         pretty_print("Writing sites...\n")
         final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
@@ -460,7 +471,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             # 1       629309  629310  2.8306e-05      1,1043  +
     
             conversion = 'C>T'
-            sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=tag_based_coverage)
+            sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=skip_coverage)
             sailor_sites = sailor_sites.drop_duplicates()
 
             print("{} final deduplicated SAILOR-formatted sites".format(len(sailor_sites)))

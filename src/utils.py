@@ -332,7 +332,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
     return coverage_df
 
 
-def get_edit_info_for_barcode_in_contig_wrapper(parameters):
+def get_coverage_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose, min_read_quality = parameters
     edit_info = edit_info.with_columns(
     pl.concat_str(
@@ -379,10 +379,10 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
         ln = s.get("LN")
         lengths_for_sn[sn] = ln
         
-    # print("\tCurrent header length for {}: {}".format(bam_file_name, len(lengths_for_sn)))
+    #print("\tCurrent header length for {}: {}".format(bam_file_name, len(lengths_for_sn)))
     
     all_barcodes_for_contig = set([r.split('\t')[2] for r in reads])
-    # print("\tNum barcodes for {}: {}".format(bam_file_name, len(all_barcodes_for_contig)))
+    #print("\tNum barcodes for {}: {}".format(bam_file_name, len(all_barcodes_for_contig)))
         
     for new_sn in all_barcodes_for_contig:
         original_chrom = new_sn.split("_")[0]
@@ -397,7 +397,7 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
     #print("\tExample new entries: {}".format(header_dict_sq[-4:]))
     header_dict['SQ'] = header_dict_sq
     
-    # print("\tNew header length: {}".format(len(header_dict.get("SQ"))))
+    #print("\tNew header length: {}".format(len(header_dict.get("SQ"))))
     
     new_header = pysam.AlignmentHeader.from_dict(header_dict)
     
@@ -405,14 +405,14 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
     
     with pysam.AlignmentFile(bam_file_name, "wb", text=str(new_header)) as bam_handle:
         for i, read_str in enumerate(reads):
-            if i % 100000 == 0:
-                print('file {}: {}/{} reads'.format(bam_file_name.split('/')[-1], i, num_reads))
+            if i > 0 and i % 100000 == 0:
+                sys.stdout.write('file {}: {}/{} reads\n'.format(bam_file_name.split('/')[-1], i, num_reads))
                 
             try:
                 read = pysam.AlignedSegment.fromstring(read_str, new_header)
                 bam_handle.write(read) 
             except Exception as e:
-                print('{}\n\nfile {}: Failed to write read with str representation of:\n\t {}'.format(e,
+                sys.stdout.err('{}\n\nfile {}: Failed to write read with str representation of:\n\t {}\n'.format(e,
                                                                                                       bam_file_name.split('/')[-1],
                                                                                                 read_str))
                 sys.exit(1)
@@ -502,7 +502,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
         bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
         
         # Write, sort and index bam immediately
-        write_reads_to_file(reads_deduped, bam_file_name, header_string)
+        write_reads_to_file(reads_deduped, bam_file_name, header_string) 
         try:
             # print("\tSorting {}...".format(bam_file_name))
             sorted_bam_file_name = sort_bam(bam_file_name)
