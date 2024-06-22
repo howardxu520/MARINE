@@ -115,8 +115,7 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             barcode_tag=barcode_tag,
                                                                             paired_end=paired_end,
                                                                             verbose=verbose,
-                                                                            processes=cores,
-                                                                            min_read_quality=min_read_quality
+                                                                            processes=cores
                                                                            )
         
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
@@ -518,6 +517,7 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--paired_end', dest='paired_end', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
+    parser.add_argument('--num_intervals_per_contig', type=int, default=200)
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
@@ -543,6 +543,8 @@ if __name__ == '__main__':
     min_dist_from_end = args.min_dist_from_end
     max_edits_per_read = args.max_edits_per_read
     
+    num_intervals_per_contig = args.num_intervals_per_contig
+    
     if cores is None:
         cores = 16
     pretty_print("Assuming {} cores available for multiprocessing".format(cores))
@@ -567,6 +569,7 @@ if __name__ == '__main__':
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
                   "\tmax_edits_per_read:\t{}".format(max_edits_per_read),
                   "\tContigs:\t{}".format(contigs),
+                  "\tNumber of intervals:\t{}".format(num_intervals_per_contig),
                   "\tCores:\t{}".format(cores),
                   "\tVerbose:\t{}".format(verbose)
                  ])
@@ -588,7 +591,7 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=500,
+        num_intervals_per_contig=num_intervals_per_contig,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
@@ -599,7 +602,7 @@ if __name__ == '__main__':
         max_edits_per_read = max_edits_per_read,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=500
+        number_of_expected_bams=num_intervals_per_contig
        )
     
     

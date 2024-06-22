@@ -101,8 +101,11 @@ def print_read_info(read):
     print("is_read1", read.is_read1)
     print("is_read2", read.is_read2)
     print("is_paired", read.is_paired)
+    print("is_proper_pair", read.is_proper_pair)
     print("mate_is_reverse", read.mate_is_reverse)
     print("read id", read.query_name)
+
+    print(str(read))
     
 def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True, min_read_quality = 0):
     if barcode_tag is None:
@@ -123,8 +126,19 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     
     is_reverse = read.is_reverse
     reverse_or_forward = '+'
-    if is_reverse:
-        reverse_or_forward = '-'
+
+    if barcode_tag:
+        if is_reverse:
+            reverse_or_forward = '-'
+    else:
+        if reverse_stranded:
+            if (read.is_read1 and not is_reverse) or (read.is_read2 and is_reverse):
+                reverse_or_forward = '-'
+                
+        if not reverse_stranded:
+            if (read.is_proper_pair) and (read.is_read1 and is_reverse) or (read.is_read2 and not is_reverse):
+                reverse_or_forward = '-'
+    
     
     reference_start = read.reference_start
     reference_end = read.reference_end
@@ -163,6 +177,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     if verbose:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print_read_info(read)
+        print('reverse_or_forward:', reverse_or_forward)
         #print("Read ID:", read_id)
         print("----------------------------")
         

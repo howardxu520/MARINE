@@ -5,10 +5,13 @@ reverse_stranded	False
 barcode_tag	CB
 barcode_whitelist_file	None
 contigs	['9']
-num_intervals_per_contig	400
+num_intervals_per_contig	16
 verbose	True
-cores	1
-number_of_expected_bams	400
+cores	16
+number_of_expected_bams	16
 paired_end	False
 min_base_quality	0
+min_read_quality	0
 min_dist_from_end	0
+peak_memory_mb: 3.681511
+time_elapsed_seconds	3.26s

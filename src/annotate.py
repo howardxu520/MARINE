@@ -22,12 +22,14 @@ def get_strand_specific_conversion(r, reverse_stranded):
     alt = r.alt
     mapped_strand = r.strand
 
+    """
     if reverse_stranded:
         if mapped_strand == '+':
             mapped_strand = '-'
         elif mapped_strand == '-':
             mapped_strand = '+'
-        
+    """
+    
     if mapped_strand == '+':
         return '{}>{}'.format(
             ref,

@@ -279,16 +279,14 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
                             barcode_tag='CB',
                             paired_end=False, 
                             verbose=False,
-                            processes=16,
-                            min_read_quality=0
+                            processes=16
                            ):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
-        verbose=verbose,
-        min_read_quality=min_read_quality
+        verbose=verbose
     )
     
     start_time = time.perf_counter()
@@ -316,12 +314,12 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
 
 
 def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder,
-                                                    barcode_tag='CB', paired_end=False, verbose=False, min_read_quality=0):
+                                                    barcode_tag='CB', paired_end=False, verbose=False):
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
                     
-        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose, min_read_quality])  
+        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose])  
         
     return job_params
 

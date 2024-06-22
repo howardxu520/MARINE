@@ -1,4 +1,4 @@
-	barcode	contig	position	ref	alt	read_id	strand	mapping_quality	coverage
-0	no_barcode	chr17	43044331	A	C	VH01429:22:AACFJ5NHV:1:2211:40480:18323	+	255	1.0
-1	no_barcode	chr17	43044352	G	A	VH01429:22:AACFJ5NHV:1:2211:40480:18323	+	255	1.0
-3	no_barcode	chr17	43044356	T	G	VH01429:22:AACFJ5NHV:1:2211:40480:18323	+	255	1.0
+barcode	contig	position	ref	alt	read_id	strand	mapping_quality	coverage
+no_barcode	chr17	43044331	A	C	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	255	1
+no_barcode	chr17	43044352	G	A	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	255	1
+no_barcode	chr17	43044356	T	G	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	255	1

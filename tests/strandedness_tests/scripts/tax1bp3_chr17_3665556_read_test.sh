@@ -11,8 +11,10 @@ python \
 --min_base_quality \
 0 \
 --cores \
-1 \
+16 \
 --paired_end \
+--reverse_stranded \
 --contigs "chr17" \
 --sailor \
---verbose 
+--verbose \
+--num_intervals_per_contig 16

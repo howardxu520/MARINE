@@ -212,7 +212,7 @@ def only_keep_positions_for_region(contig, output_folder, positions_for_barcode,
 def check_read(read):
     return True
 
-def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, paired_end=False, verbose=False, min_read_quality = 0):
+def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, paired_end=False, verbose=False):
     if not paired_end:
         if verbose:
             print("~~~~~~\n!!!!SINGLE END!!!!!\n~~~~~~~`")
@@ -221,7 +221,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
         coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(just_contig, 
                                                                     pos-1, 
                                                                     pos, 
-                                                                    quality_threshold=min_read_quality,
+                                                                    quality_threshold=0, # base quality
                                                                     read_callback='all'
                                                                    ))
         return coverage_at_pos
@@ -236,7 +236,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
                                                        stepper='nofilter',
                                                        #stepper='all', 
                                                        truncate=True, 
-                                                       min_base_quality=0,
+                                                       min_base_quality=0, # base quality
                                                        max_depth=1000000)
         
         unique_read_ids = set()
@@ -246,11 +246,16 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
                 #    print("at pos {}:{}:".format(just_contig, pos), pileupread)
                 if not pileupread.is_del and not pileupread.is_refskip:                                        
                     unique_read_ids.add(pileupread.alignment.query_name)
+                    
         coverage_at_pos = len(unique_read_ids)
+
+        if verbose:
+            print('coverage_at_pos', coverage_at_pos)
+            
         return coverage_at_pos
 
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
-                    verbose=False, min_read_quality = 0):
+                    verbose=False):
 
     if barcode_tag:
         # Single-cell, contig will include barcode ending-based suffix 
@@ -300,8 +305,8 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                     
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
                                                                             pos-1, 
-                                                                            pos, 
-                                                                            quality_threshold=min_read_quality,
+                                                                            pos,  
+                                                                            quality_threshold=0, # base quality
                                                                             read_callback='all'
                                                                            ))
 
@@ -314,7 +319,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 just_contig = contig.split('_')[0]
                 try:
                     coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
-                                                               paired_end=paired_end, verbose=verbose, min_read_quality = min_read_quality)
+                                                               paired_end=paired_end, verbose=verbose)
                                 
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
                     coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
@@ -329,7 +334,7 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
 
 def get_coverage_wrapper(parameters):
-    edit_info, contig, output_folder, barcode_tag, paired_end, verbose, min_read_quality = parameters
+    edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
     edit_info = edit_info.with_columns(
     pl.concat_str(
         [
@@ -343,7 +348,7 @@ def get_coverage_wrapper(parameters):
     edit_info_df.index = edit_info_df['barcode_position']
     
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
-                                  paired_end=paired_end, verbose=verbose, min_read_quality=min_read_quality)
+                                  paired_end=paired_end, verbose=verbose)
 
     # Use an inner join to filter out any sites for which coverage was not found... this is expected in bulk processing,
     # where certain positions might be specified that are not within the bam for the specific job.
