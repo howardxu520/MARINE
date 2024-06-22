@@ -128,18 +128,35 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     reverse_or_forward = '+'
 
     if barcode_tag:
+        # Single-cell (10x)
+        
         if is_reverse:
             reverse_or_forward = '-'
-    else:
+            
+    elif (read.is_read1 or read.is_read2):
+        # Paired end
         if reverse_stranded:
             if (read.is_read1 and not is_reverse) or (read.is_read2 and is_reverse):
                 reverse_or_forward = '-'
                 
         if not reverse_stranded:
-            if (read.is_proper_pair) and (read.is_read1 and is_reverse) or (read.is_read2 and not is_reverse):
+            if (read.is_read1 and is_reverse) or (read.is_read2 and not is_reverse):
                 reverse_or_forward = '-'
     
-    
+    else:
+        # Single end
+        if is_reverse:
+            if reverse_stranded:
+                reverse_or_forward = '+'
+            else:
+                reverse_stranded = '-'
+        else:
+            if reverse_stranded:
+                reverse_or_forward = '-'
+            else:
+                reverse_stranded = '+'
+        
+        
     reference_start = read.reference_start
     reference_end = read.reference_end
     read_id = read.query_name

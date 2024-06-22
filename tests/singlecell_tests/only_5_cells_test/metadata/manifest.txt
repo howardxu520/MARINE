@@ -13,5 +13,5 @@ paired_end	False
 min_base_quality	0
 min_read_quality	0
 min_dist_from_end	0
-peak_memory_mb: 3.681511
-time_elapsed_seconds	3.26s
+peak_memory_mb: 3.679624
+time_elapsed_seconds	3.21s

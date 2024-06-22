@@ -1,4 +1,4 @@
 site_id	barcode	contig	position	ref	alt	strand	count	coverage	conversion	strand_conversion	feature_name	feature_type
-no_barcode_chr17_43001717_A_G_+	no_barcode	chr17	43001717	A	G	+	1	1	A>G	T>C	.	.
-no_barcode_chr17_43001716_G_A_+	no_barcode	chr17	43001716	G	A	+	1	1	G>A	C>T	.	.
-no_barcode_chr17_43001715_A_G_+	no_barcode	chr17	43001715	A	G	+	1	1	A>G	T>C	.	.
+no_barcode_chr17_43001716_G_A_+	no_barcode	chr17	43001716	G	A	+	1	1	G>A	G>A	.	.
+no_barcode_chr17_43001715_A_G_+	no_barcode	chr17	43001715	A	G	+	1	1	A>G	A>G	.	.
+no_barcode_chr17_43001717_A_G_+	no_barcode	chr17	43001717	A	G	+	1	1	A>G	A>G	.	.

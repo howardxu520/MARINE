@@ -179,7 +179,8 @@ def make_folder(folder_path):
         try:
             os.mkdir(folder_path)
         except Exception as e:
-            sys.stderr.write(folder_path, e, '\n')
+            pass
+            #sys.stderr.write('{}_{}\n'.format(folder_path, e))
 
 def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)
