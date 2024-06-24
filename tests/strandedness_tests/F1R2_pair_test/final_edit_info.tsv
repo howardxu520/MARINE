@@ -1,5 +1,0 @@
-	barcode	contig	position	ref	alt	read_id	strand	dist_from_end	base_quality	mapping_quality	coverage
-43044331_no_barcode	no_barcode	chr17	43044331	A	C	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	27	12	255	1
-43044352_no_barcode	no_barcode	chr17	43044352	G	A	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	48	12	255	1
-43044352_no_barcode	no_barcode	chr17	43044352	G	A	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	41	34	255	1
-43044356_no_barcode	no_barcode	chr17	43044356	T	G	VH01429:22:AACFJ5NHV:1:2211:40480:18323	-	45	12	255	1
