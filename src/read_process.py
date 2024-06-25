@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from collections import defaultdict
 from scipy import sparse
+from copy import copy
 
 complements = {
     'A': 'T',
@@ -100,10 +101,13 @@ def print_read_info(read):
     print("is_read1", read.is_read1)
     print("is_read2", read.is_read2)
     print("is_paired", read.is_paired)
+    print("is_proper_pair", read.is_proper_pair)
     print("mate_is_reverse", read.mate_is_reverse)
     print("read id", read.query_name)
+
+    print(str(read))
     
-def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True):
+def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True, min_read_quality = 0):
     if barcode_tag is None:
         read_barcode = 'no_barcode'
     elif read.has_tag(barcode_tag):
@@ -121,15 +125,49 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
             return 'xf:{}'.format(read.get_tag('xf')), [], {}
     
     is_reverse = read.is_reverse
+    reverse_or_forward = '+'
+
+    if barcode_tag:
+        # Single-cell (10x)
+        
+        if is_reverse:
+            reverse_or_forward = '-'
+            
+    elif (read.is_read1 or read.is_read2):
+        # Paired end
+        if reverse_stranded:
+            if (read.is_read1 and not is_reverse) or (read.is_read2 and is_reverse):
+                reverse_or_forward = '-'
+                
+        if not reverse_stranded:
+            if (read.is_read1 and is_reverse) or (read.is_read2 and not is_reverse):
+                reverse_or_forward = '-'
+    
+    else:
+        # Single end
+        if is_reverse:
+            if reverse_stranded:
+                reverse_or_forward = '+'
+            else:
+                reverse_stranded = '-'
+        else:
+            if reverse_stranded:
+                reverse_or_forward = '-'
+            else:
+                reverse_stranded = '+'
+        
         
     reference_start = read.reference_start
     reference_end = read.reference_end
     read_id = read.query_name
-    mapq = read.mapping_quality
+    mapq = read.mapping_quality        
     cigarstring = read.cigarstring
     
     
-    # ERROR CHECKS, WITH RETURN CODE SPECIFIED
+    # ERROR CHECKS, WITH RETURN CODE SPECIFIED        
+    if mapq < min_read_quality:
+        return 'mapq_low', [], {}
+        
     if not has_edits(read):
         return 'no_edits', [], {}
 
@@ -156,6 +194,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     if verbose:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print_read_info(read)
+        print('reverse_or_forward:', reverse_or_forward)
         #print("Read ID:", read_id)
         print("----------------------------")
         
@@ -186,7 +225,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
         list_of_rows.append([
-            read_barcode, str(contig), str(updated_position), ref, alt, read_id, '+', str(distance_from_read_end), str(qual), str(mapq)
+            read_barcode, str(contig), str(updated_position), ref, alt, read_id, reverse_or_forward, str(distance_from_read_end), str(qual), str(mapq)
         ])
         
         num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
@@ -317,13 +356,19 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
     if verbose:
             print('CIGAR tuples before clipping (if needed):\n', cigar_tuples)
             print('Aligned sequence before clipping (if needed):\n', aligned_seq)
+            print("Qualities before clipping:\n", query_qualities)
 
-    aligned_seq, cigar_tuples = remove_softclipped_bases(cigar_tuples, aligned_seq)
+    original_cigar_tuples = copy(cigar_tuples)
+    aligned_seq, cigar_tuples = remove_softclipped_bases(original_cigar_tuples, aligned_seq)
+    if verbose:
+        print("Soft clipping quality scores ...")
+    query_qualities, cigar_tuples = remove_softclipped_bases(original_cigar_tuples, query_qualities)
 
     if verbose:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('CIGAR tuples after clipping (if needed):\n', cigar_tuples)
         print('Aligned sequence after clipping (if needed):\n', aligned_seq)
+        print("Qualities after clipping:\n", query_qualities)
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
 
@@ -374,6 +419,8 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
         print("Fixed aligned seq:\n", fixed_aligned_seq.replace(n_to_replace, "{}*n".format(num_n)))
         print("Finalized fixed aligned seq:\n", finalized_fixed_aligned_seq.replace(n_to_replace, "{}*n".format(num_n)))
 
+        print("Indicated qualities:\n", indicated_qualities.replace(n_to_replace, "{}*n".format(num_n)))
+        
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('alt bases', alt_bases)
         print('ref bases', ref_bases)
@@ -409,6 +456,7 @@ def get_edit_information_wrapper(read, hamming_check=False, verbose=False):
         print("CIGAR string", cigarstring)
         print("Reference seq:", reference_seq.upper())
         print("Aligned seq:", aligned_seq)
+        print("Qualities:", query_qualities)
     
     return(get_edit_information(md_tag,
                                 cigar_tuples, 
