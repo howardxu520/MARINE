@@ -5,9 +5,9 @@ import sys
 directory_path = os.path.abspath(os.path.join('../src/'))
 if directory_path not in sys.path:
     sys.path.append(directory_path)
-    
-from read_process import get_contig_lengths_dict,\
-incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
+
+from utils import get_contig_lengths_dict
+from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,remove_softclipped_bases
 
 

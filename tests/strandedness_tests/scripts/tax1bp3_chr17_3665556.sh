@@ -1,0 +1,19 @@
+python \
+/tscc/projects/ps-yeolab3/ekofman/sailor2/marine.py \
+--bam_filepath \
+/tscc/projects/ps-yeolab3/ekofman/sailor2/tests/strandedness_tests/bams/tax1bp3_chr17_3665556.bam \
+--annotation_bedfile_path \
+/tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/hg38_gencode.v35.annotation.genes.bed \
+--output_folder \
+/tscc/projects/ps-yeolab3/ekofman/sailor2/tests/strandedness_tests/tax1bp3_chr17_3665556_test \
+--min_dist_from_end \
+0 \
+--min_base_quality \
+0 \
+--cores \
+16 \
+--paired_end \
+--contigs "chr17" \
+--sailor \
+--verbose \
+--num_intervals_per_contig 16
