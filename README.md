@@ -8,7 +8,8 @@ samtools calmd -bAr input.bam reference_genome.fa > input.md.bam
 samtools index input.md.bam
 ```
 
-Use the provided .yml file to create a new conda environment that contains all required dependencies for MARINE:
+MARINE was developed and tested using Python 3.8.18 and is not guaranteed to work with earlier versions of Python.
+Use the provided .yml file to create a new conda environment that contains all required dependencies, including the proper Python version, for MARINE:
 
 ```
 conda env create  --file=marine_environment.yml
