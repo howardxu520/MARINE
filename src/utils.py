@@ -336,6 +336,11 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
 def get_coverage_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
+
+    output_filename = '{}/coverage/{}.tsv'.format(output_folder, contig, header=False)
+    if os.path.exists(output_filename):
+        return output_filename
+        
     edit_info = edit_info.with_columns(
     pl.concat_str(
         [
@@ -351,11 +356,13 @@ def get_coverage_wrapper(parameters):
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
                                   paired_end=paired_end, verbose=verbose)
 
-    # Use an inner join to filter out any sites for which coverage was not found... this is expected in bulk processing,
-    # where certain positions might be specified that are not within the bam for the specific job.
+    # Combine edit information with coverage information
     edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
+
+    edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
+    edit_info_and_coverage_joined.to_csv(output_filename, sep='\t', header=False)
     
-    return edit_info_and_coverage_joined
+    return output_filename
     
 
 

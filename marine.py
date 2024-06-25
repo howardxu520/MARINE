@@ -97,7 +97,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     return total_bam_generation_time, total_seconds_for_bams_df
     
     
-    
+import subprocess 
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
                        min_read_quality=0, bam_filepath=''):
 
@@ -117,7 +117,17 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             verbose=verbose,
                                                                             processes=cores
                                                                            )
+
+    concat_command = 'for f in {}/coverage/*.tsv; do cat $f; done > {}/all_edit_info.tsv'.format(output_folder, output_folder)
+
+    command_bash = '{}/concat_command.sh'.format(output_folder)
+    with open(command_bash, 'w') as f:
+        f.write(concat_command)
         
+    print("Concatenating results...")
+    subprocess.run(['bash', command_bash])
+    print("Done concatenating.")
+    
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
     total_seconds_for_contig_df.columns = ['seconds']
     total_seconds_for_contig_df['contig sections'] = total_seconds_for_contig_df.index
@@ -295,6 +305,9 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
 
+        coverage_subfolder = '{}/coverage'.format(output_folder)
+        make_folder(coverage_subfolder)
+        
         results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                barcode_tag=barcode_tag, 
                                                                                paired_end=paired_end,
@@ -308,24 +321,28 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
 
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
-        all_edit_info_pd = pd.concat(results)
+        #all_edit_info_pd = pd.concat(results)
 
-        if verbose:
-            all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
+        #if verbose:
+        #    all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
 
         # Filtering and site-level information
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Filtering and calculating site-level statistics", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
-
-        # Convert to polars for faster operations
-        #all_edit_info = pl.from_pandas(all_edit_info_pd)
+        print("Loading edit information...")
+        all_edit_info_pd = pd.read_csv('{}/all_edit_info.tsv'.format(output_folder),
+                                       sep='\t', 
+                                       names=['barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
+       'dist_from_end', 'base_quality', 'mapping_quality', 'barcode_position',
+       'coverage', 'source', 'position_barcode'], dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
+        
+        #all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
 
         # Ensure that we are taking cleaning for only unique edits
         # TODO fix thisssssss
-        all_edit_info_pd['position_barcode'] = all_edit_info_pd['position'].astype(str) + '_' + all_edit_info_pd['barcode'].astype(str)
+        #all_edit_info_pd['position_barcode'] = all_edit_info_pd['position'].astype(str) + '_' + all_edit_info_pd['barcode'].astype(str)
         
         coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
         [
@@ -378,6 +395,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
         pretty_print("Filtering edited sites", style='~')
         pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
+
+        #all_edit_info_unique_position_with_coverage_df['min_base_quality'] = all_edit_info_unique_position_with_coverage_df['min_base_quality'].astype(int)
         
         all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
             (all_edit_info_unique_position_with_coverage_df["base_quality"] >= min_base_quality) & 
