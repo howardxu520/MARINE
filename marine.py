@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 from glob import glob
 from multiprocessing import Pool
@@ -14,7 +15,7 @@ import time
 from tqdm import tqdm
 import tracemalloc
 
-sys.path.append('src/')
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_information_wrapper,\
