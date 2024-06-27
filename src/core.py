@@ -49,8 +49,9 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
                 pbar.update()
 
-                overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
-                results.append([_[3], _[4], _[5], _[6]])
+                if barcode_tag: 
+                    # Only keep this information for single cell requirements
+                    overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
 
                 total_reads = _[3]
                 total_time = time.perf_counter() - start_time
