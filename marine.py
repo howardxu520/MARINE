@@ -39,7 +39,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
     
     overall_label_to_list_of_contents, results, overall_time, overall_total_reads, \
-    total_seconds_for_reads = run_edit_identifier(
+    total_seconds_for_reads, counts_summary_dict = run_edit_identifier(
         bam_filepath, 
         output_folder, 
         reverse_stranded=reverse_stranded,
@@ -58,7 +58,8 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     pretty_print(
         [
             "Reads processed:\t{}".format(overall_total_reads), 
-            "Time to process reads in min:\t{}".format(round(overall_time/60, 5))
+            "Time to process reads in min:\t{}".format(round(overall_time/60, 5)),
+            "Summary:\t{}".format(counts_summary_dict)
         ],
         style="-"
     )
