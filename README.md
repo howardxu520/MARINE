@@ -17,15 +17,15 @@ conda activate marine_environment
 ```
 
 Notes:
-* Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
 * The more cores used, the faster MARINE will run
-* The annotation file should be tab-separated and should have a non-standard bed column ordering, as follows:
+* Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
+* The annotation file should be tab-separated and should have a standard bed column ordering, as follows:
 ```
-1       29554   31109   MIR1302-2HG     +       lincRNA
-1       34554   36081   FAM138A         -       lincRNA
-1       65419   71585   OR4F5           +       protein_coding
-1       89295   133723  AL627309.1      -       lincRNA
-1       89551   91105   AL627309.3      -       lincRNA
+1       29554   31109   MIR1302-2HG     lincRNA  +       
+1       34554   36081   FAM138A         lincRNA  -       
+1       65419   71585   OR4F5           protein_coding  +       
+1       89295   133723  AL627309.1      lincRNA  -       
+1       89551   91105   AL627309.3      lincRNA  -       
 ```
 
 ### Installation
