@@ -17,15 +17,15 @@ conda activate marine_environment
 ```
 
 Notes:
-* Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
 * The more cores used, the faster MARINE will run
-* The annotation file should be tab-separated and should have a non-standard bed column ordering, as follows:
+* Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
+* The annotation file should be tab-separated and should have a standard bed column ordering, as follows:
 ```
-1       29554   31109   MIR1302-2HG     +       lincRNA
-1       34554   36081   FAM138A         -       lincRNA
-1       65419   71585   OR4F5           +       protein_coding
-1       89295   133723  AL627309.1      -       lincRNA
-1       89551   91105   AL627309.3      -       lincRNA
+1       29554   31109   MIR1302-2HG     lincRNA  +       
+1       34554   36081   FAM138A         lincRNA  -       
+1       65419   71585   OR4F5           protein_coding  +       
+1       89295   133723  AL627309.1      lincRNA  -       
+1       89551   91105   AL627309.3      lincRNA  -       
 ```
 
 ### Installation
@@ -68,7 +68,13 @@ optional arguments:
 
 The examples should take no more than a few minutes to run, especially if multiple CPUs are avilable for use (and specified using the --cores arugment). MARINE was developed and tested in Linux running on x86_64 but should work without any special hardware. Please let us know if you encounter any problems by creating a GitHub issue in this repository.
 
+Expected example outputs are contained in the subfolders in the examples folder.
+
 ## Single-cell example MARINE command
+MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs.
+
+![Finding edits in single cells](images/only_5_cells_test_example.png)
+
 ```
 python marine.py \
 --bam_filepath examples/data/single_cell_CT.md.subset.bam \
@@ -78,7 +84,22 @@ python marine.py \
 --num_intervals_per_contig 16
 ```
 
+## Single-cell long read (PacBio) example MARINE command
+MARINE can be used to calculate edits and coverage on a per-cell and per-isoform basis after certain pre-processing steps are taken. Reads can be quantified and assigned to annotated isoforms using IsoQuant (v3.3.0) with parameters: --data-type pacbio, --transcript_quantification unique_only, and --gene_quantification unique_only. The read assignment output from IsoQuant can be used to add an isoform tag for each read, indicating the isoform to which it was assigned. Furthermore, the cell barcode can be concatenated to the isoform in a new tag called "IB", as shown in the IGV screenshot below (grouping labels refer to this tag in this case). Note that a suffix has been added to each IB tag reflecting the ending of both the isoform ID and the cell barcodes, which is used for efficiently calculating coverage only within each appropriate subset of isoform and cell-specific reads.
+
+![Finding edits in single cells](images/long_read_sc_test_example.png)
+
+```
+python marine.py \
+--bam_filepath examples/data/LR_single_cell.md.subset.filtered.sorted.bam \
+--output_folder examples/sc_lr_subset_CT \
+--barcode_whitelist_file examples/data/sc_lr_barcodes.tsv.gz \
+--barcode_tag "IB" \
+--num_intervals_per_contig 16
+```
+
 ## Bulk (single-end) example MARINE command
+
 ```
 python marine.py \
 --bam_filepath examples/data/bulk_CT.md.subset.bam \

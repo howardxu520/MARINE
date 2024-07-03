@@ -39,7 +39,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
     
     overall_label_to_list_of_contents, results, overall_time, overall_total_reads, \
-    total_seconds_for_reads = run_edit_identifier(
+    total_seconds_for_reads, counts_summary_dict = run_edit_identifier(
         bam_filepath, 
         output_folder, 
         reverse_stranded=reverse_stranded,
@@ -58,7 +58,8 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     pretty_print(
         [
             "Reads processed:\t{}".format(overall_total_reads), 
-            "Time to process reads in min:\t{}".format(round(overall_time/60, 5))
+            "Time to process reads in min:\t{}".format(round(overall_time/60, 5)),
+            "Summary:\t{}".format(counts_summary_dict)
         ],
         style="-"
     )
@@ -232,7 +233,7 @@ def collate_edit_info_shards(output_folder):
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4):
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, skip_coverage=False):
     
     print_marine_logo()
     
@@ -256,9 +257,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         f.write('min_base_quality\t{}\n'.format(min_base_quality))
         f.write('min_read_quality\t{}\n'.format(min_read_quality))
         f.write('min_dist_from_end\t{}\n'.format(min_base_quality))
-
-    # Flag to turn of coverage calculation and column addition -- only needs to be turned off for debugging
-    skip_coverage = False
+        f.write('skip_coverage\t{}\n'.format(skip_coverage))
         
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
@@ -301,7 +300,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
         
-    if not filtering_only:
+    if not filtering_only and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
@@ -532,6 +531,7 @@ if __name__ == '__main__':
     parser.add_argument('--sailor', dest='sailor', action='store_true')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--paired_end', dest='paired_end', action='store_true')
+    parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
     parser.add_argument('--num_intervals_per_contig', type=int, default=200)
     
@@ -552,6 +552,7 @@ if __name__ == '__main__':
     sailor = args.sailor
     verbose = args.verbose
     paired_end = args.paired_end
+    skip_coverage = args.skip_coverage
     
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
@@ -587,7 +588,8 @@ if __name__ == '__main__':
                   "\tContigs:\t{}".format(contigs),
                   "\tNumber of intervals:\t{}".format(num_intervals_per_contig),
                   "\tCores:\t{}".format(cores),
-                  "\tVerbose:\t{}".format(verbose)
+                  "\tVerbose:\t{}".format(verbose),
+                  "\tSkip coverage?:\t{}".format(skip_coverage)
                  ])
 
     # Whether to only run for certain contigs 
@@ -618,7 +620,8 @@ if __name__ == '__main__':
         max_edits_per_read = max_edits_per_read,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=num_intervals_per_contig
+        number_of_expected_bams=num_intervals_per_contig,
+        skip_coverage=skip_coverage
        )
     
     

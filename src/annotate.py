@@ -41,23 +41,22 @@ def get_strand_specific_conversion(r, reverse_stranded):
             ref_alt_dict.get(alt)
         )
 
-def add_strand_specific_conversion(sites_df):
-    print("Adjusting conversion to mapped strand...")
-    sites_with_annot_df['strand_conversion'] = sites_with_annot_df.apply(get_strand_specific_conversion, axis=1)
-    return sites_with_annot_df
-    
+
 def annotate_sites(sites_df, annotation_bedfile_path):    
     annotation_bedtool = pybedtools.BedTool(annotation_bedfile_path)
     sites_bedtool = make_bedtool_from_final_sites(sites_df)
     
     print("Annotating sites with GTF information from {}...".format(annotation_bedfile_path))
     annotation_intersect = sites_bedtool.intersect(annotation_bedtool, wb=True, loj=True, s=True).to_dataframe()
+    #print(annotation_intersect)
+    #print('num rows with annotation: {}'.format(len(annotation_intersect)))
     new_cols = ['contig', 'position', 'position', 'site_id', 'conversion', 'strand',
      'feature_chrom', 'feature_start', 'feature_end', 'feature_name', 'feature_type', 'feature_strand']
     annotation_intersect.columns = new_cols
     annotation_intersect = annotation_intersect[['site_id', 'feature_name', 'feature_strand', 'feature_type']]
-
-    annotation_intersect_agg = annotation_intersect.groupby('site_id').agg({'feature_name': ','.join, 'feature_type': ','.join})
+    annotation_intersect = annotation_intersect.replace(-1, '.')
+    
+    annotation_intersect_agg = annotation_intersect.groupby('site_id').agg({'feature_name': ','.join, 'feature_type': ','.join, 'feature_strand': ','.join})
                                                              
     sites_with_annot_df = sites_df.merge(annotation_intersect_agg, on='site_id')
 

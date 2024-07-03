@@ -19,7 +19,7 @@ print_read_info, get_read_information, get_hamming_distance, remove_softclipped_
 
 from utils import get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs, pretty_print,\
-get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam
+get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes
 
 import os, psutil
 
@@ -41,7 +41,8 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
     results = []
     
     start_time = time.perf_counter()
-    
+
+    counts_summary_dict = {}
     multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
@@ -49,10 +50,13 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
                 pbar.update()
 
-                overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
-                results.append([_[3], _[4], _[5], _[6]])
+                if barcode_tag: 
+                    # Only keep this information for single cell requirements
+                    overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
 
                 total_reads = _[3]
+                counts_summary_dict = _[4]
+                
                 total_time = time.perf_counter() - start_time
 
                 overall_total_reads += total_reads
@@ -60,7 +64,7 @@ def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_t
                 total_seconds_for_reads[overall_total_reads] = total_time
 
     overall_time = time.perf_counter() - start_time 
-    return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads
+    return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, counts_summary_dict
 
 
 
@@ -130,7 +134,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
         
     output_file = '{}/{}_{}_{}_{}_edit_info.tsv'.format(edit_info_subfolder, contig, split_index, start, end)
     remove_file_if_exists(output_file)
-
+    
     with open(output_file, 'w') as f:        
         write_header_to_edit_info(f)
 
@@ -148,7 +152,13 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
                 barcode = 'missing'
                 
             if barcode_whitelist and barcode != 'no_barcode':
-                if barcode not in barcode_whitelist:
+                if barcode_tag == "IB" and read.has_tag("CB"):
+                    # Single-cell long reads
+                    cell_barcode = read.get_tag("CB")
+                else:
+                    cell_barcode = barcode
+                    
+                if cell_barcode not in barcode_whitelist:
                     counts[contig]['Barcode Filtered'] += 1
                     continue
             
@@ -241,8 +251,8 @@ def find_edits_and_split_bams_wrapper(parameters):
         counts_df = pd.DataFrame.from_dict(counts)
         
         if verbose:
-            pass
-            #print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+            #pass
+            print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
         
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
         
@@ -356,10 +366,10 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
 
         edit_info = pl.from_pandas(edit_info_df) 
         
-        if barcode_tag == 'CB':
-            # For single-cell data we have to split the edit infos for each contig additionally by cell barcode 
-            # for the coverage calculation
-            suffix_options = ["A-1", "C-1", "G-1", "T-1"]     
+        if barcode_tag in ['CB', 'IS', 'IB']:
+            # For single-cell or long read data we have to split the edit infos for each contig additionally by cell barcode 
+            # or isoform ID in order to make the coverage calculation efficient per cell and/or per isoform
+            suffix_options = suffixes.get(barcode_tag)
             for suffix in suffix_options:
                 edit_info_subset = edit_info.filter(pl.col("barcode").str.ends_with(suffix))
                 edit_info_grouped_per_contig["{}_{}".format(contig, suffix)].append(edit_info_subset)

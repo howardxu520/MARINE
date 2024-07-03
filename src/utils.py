@@ -8,6 +8,67 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
+
+suffixes = {
+    'CB': [
+        "A-1", "C-1", "G-1", "T-1"
+    ],
+    'IS': [
+        "00","01","02","03","04","05","06","07","08","09",
+        "10","11","12","13","14","15","16","17","18","19",
+        "20","21","22","23","24","25","26","27","28","29",
+        "30","31","32","33","34","35","36","37","38","39",
+        "40","41","42","43","44","45","46","47","48","49",
+        "50","51","52","53","54","55","56","57","58","59",
+        "60","61","62","63","64","65","66","67","68","69",
+        "70","71","72","73","74","75","76","77","78","79",
+        "80","81","82","83","84","85","86","87","88","89",
+        "90","91","92","93","94","95","96","97","98","99",
+        ],
+    'IB': [
+        "00-A","01-A","02-A","03-A","04-A","05-A","06-A","07-A","08-A","09-A",
+        "10-A","11-A","12-A","13-A","14-A","15-A","16-A","17-A","18-A","19-A",
+        "20-A","21-A","22-A","23-A","24-A","25-A","26-A","27-A","28-A","29-A",
+        "30-A","31-A","32-A","33-A","34-A","35-A","36-A","37-A","38-A","39-A",
+        "40-A","41-A","42-A","43-A","44-A","45-A","46-A","47-A","48-A","49-A",
+        "50-A","51-A","52-A","53-A","54-A","55-A","56-A","57-A","58-A","59-A",
+        "60-A","61-A","62-A","63-A","64-A","65-A","66-A","67-A","68-A","69-A",
+        "70-A","71-A","72-A","73-A","74-A","75-A","76-A","77-A","78-A","79-A",
+        "80-A","81-A","82-A","83-A","84-A","85-A","86-A","87-A","88-A","89-A",
+        "90-A","91-A","92-A","93-A","94-A","95-A","96-A","97-A","98-A","99-A",
+        "00-C","01-C","02-C","03-C","04-C","05-C","06-C","07-C","08-C","09-C",
+        "10-C","11-C","12-C","13-C","14-C","15-C","16-C","17-C","18-C","19-C",
+        "20-C","21-C","22-C","23-C","24-C","25-C","26-C","27-C","28-C","29-C",
+        "30-C","31-C","32-C","33-C","34-C","35-C","36-C","37-C","38-C","39-C",
+        "40-C","41-C","42-C","43-C","44-C","45-C","46-C","47-C","48-C","49-C",
+        "50-C","51-C","52-C","53-C","54-C","55-C","56-C","57-C","58-C","59-C",
+        "60-C","61-C","62-C","63-C","64-C","65-C","66-C","67-C","68-C","69-C",
+        "70-C","71-C","72-C","73-C","74-C","75-C","76-C","77-C","78-C","79-C",
+        "80-C","81-C","82-C","83-C","84-C","85-C","86-C","87-C","88-C","89-C",
+        "90-C","91-C","92-C","93-C","94-C","95-C","96-C","97-C","98-C","99-C",
+        "00-G","01-G","02-G","03-G","04-G","05-G","06-G","07-G","08-G","09-G",
+        "10-G","11-G","12-G","13-G","14-G","15-G","16-G","17-G","18-G","19-G",
+        "20-G","21-G","22-G","23-G","24-G","25-G","26-G","27-G","28-G","29-G",
+        "30-G","31-G","32-G","33-G","34-G","35-G","36-G","37-G","38-G","39-G",
+        "40-G","41-G","42-G","43-G","44-G","45-G","46-G","47-G","48-G","49-G",
+        "50-G","51-G","52-G","53-G","54-G","55-G","56-G","57-G","58-G","59-G",
+        "60-G","61-G","62-G","63-G","64-G","65-G","66-G","67-G","68-G","69-G",
+        "70-G","71-G","72-G","73-G","74-G","75-G","76-G","77-G","78-G","79-G",
+        "80-G","81-G","82-G","83-G","84-G","85-G","86-G","87-G","88-G","89-G",
+        "90-G","91-G","92-G","93-G","94-G","95-G","96-G","97-G","98-G","99-G",
+        "00-T","01-T","02-T","03-T","04-T","05-T","06-T","07-T","08-T","09-T",
+        "10-T","11-T","12-T","13-T","14-T","15-T","16-T","17-T","18-T","19-T",
+        "20-T","21-T","22-T","23-T","24-T","25-T","26-T","27-T","28-T","29-T",
+        "30-T","31-T","32-T","33-T","34-T","35-T","36-T","37-T","38-T","39-T",
+        "40-T","41-T","42-T","43-T","44-T","45-T","46-T","47-T","48-T","49-T",
+        "50-T","51-T","52-T","53-T","54-T","55-T","56-T","57-T","58-T","59-T",
+        "60-T","61-T","62-T","63-T","64-T","65-T","66-T","67-T","68-T","69-T",
+        "70-T","71-T","72-T","73-T","74-T","75-T","76-T","77-T","78-T","79-T",
+        "80-T","81-T","82-T","83-T","84-T","85-T","86-T","87-T","88-T","89-T",
+        "90-T","91-T","92-T","93-T","94-T","95-T","96-T","97-T","98-T","99-T"
+    ]
+}
+
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
 
@@ -455,13 +516,11 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     all_contents_df = pl.concat(sorted_subcontig_dfs)
                 
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
-    if barcode_tag:
-        suffix_options = ["A-1", "C-1", "G-1", "T-1"]
-    else:
-        # If we are not splitting up contigs by their barcode ending, instead let's do it by random bucket
-        range_for_suffixes = number_of_expected_bams
-        suffix_options = range(0, range_for_suffixes)
-        
+    assert(barcode_tag in ['CB', 'IS', 'IB'])
+    
+    suffix_options = suffixes.get(barcode_tag)
+    print("\t{} suffixes".format(len(suffix_options)))
+    
     for suffix in suffix_options:
         if barcode_tag:
             all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
@@ -470,12 +529,13 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             
 
         if verbose:
-            print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
-                    contig,
-                    suffix,
-                    len(all_contents_df),
-                    len(all_contents_for_suffix)
-                    ))
+            if len(all_contents_for_suffix) > 0:
+                print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                        contig,
+                        suffix,
+                        len(all_contents_df),
+                        len(all_contents_for_suffix)
+                        ))
         
         try:
             reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
@@ -488,7 +548,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             reads_count_for_suffix = len(all_contents_for_suffix)
             
             if reads_count_for_suffix == 0:
-                print("\tWARNING: No reads found in region {}:{}... assuming this is not an issue, but perhaps worth confirming manually using samtools.".format(contig, suffix))
+                #print("\tWARNING: No reads found in region {}:{}... assuming this is not an issue, but perhaps worth confirming manually using samtools.".format(contig, suffix))
                 reads_deduped = []
             else:
                 print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(

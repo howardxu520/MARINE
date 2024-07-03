@@ -360,10 +360,17 @@ def get_edit_information(md_tag, cigar_tuples, aligned_seq, reference_seq, query
 
     original_cigar_tuples = copy(cigar_tuples)
     aligned_seq, cigar_tuples = remove_softclipped_bases(original_cigar_tuples, aligned_seq)
-    if verbose:
-        print("Soft clipping quality scores ...")
-    query_qualities, cigar_tuples = remove_softclipped_bases(original_cigar_tuples, query_qualities)
+    
 
+    if query_qualities:
+        if verbose:
+            print("Soft clipping quality scores ...")
+        query_qualities, cigar_tuples = remove_softclipped_bases(original_cigar_tuples, query_qualities)
+    else:
+        if verbose:
+            print("No quality scores...")
+        query_qualities, cigar_tuples = query_qualities, original_cigar_tuples
+        
     if verbose:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('CIGAR tuples after clipping (if needed):\n', cigar_tuples)
@@ -445,7 +452,9 @@ def get_edit_information_wrapper(read, hamming_check=False, verbose=False):
     cigar_tuples = read.cigartuples
     aligned_seq = read.get_forward_sequence()
     query_qualities = read.query_qualities
-
+    if not query_qualities:
+        query_qualities = [40 for i in range(len(aligned_seq))]
+        
     if read.is_reverse:
         aligned_seq = reverse_complement(aligned_seq)
     
