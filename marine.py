@@ -14,6 +14,7 @@ from sys import getsizeof
 import time
 from tqdm import tqdm
 import tracemalloc
+from matplotlib import pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
@@ -33,7 +34,7 @@ gather_edit_information_across_subcontigs, run_coverage_calculator, generate_sit
 from annotate import annotate_sites, get_strand_specific_conversion 
 
 
-def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
+def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
                 verbose=False, cores=64, min_read_quality = 0):
     
     pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
@@ -42,7 +43,7 @@ def edit_finder(bam_filepath, output_folder, reverse_stranded, barcode_tag="CB",
     total_seconds_for_reads, counts_summary_dict = run_edit_identifier(
         bam_filepath, 
         output_folder, 
-        reverse_stranded=reverse_stranded,
+        strandedness=strandedness,
         barcode_tag=barcode_tag,
         barcode_whitelist=barcode_whitelist,
         contigs=contigs,
@@ -233,7 +234,7 @@ def collate_edit_info_shards(output_folder):
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, reverse_stranded=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, skip_coverage=False):
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, skip_coverage=False):
     
     print_marine_logo()
     
@@ -245,7 +246,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         f.write('bam_filepath\t{}\n'.format(bam_filepath)) 
         f.write('annotation_bedfile_path\t{}\n'.format(annotation_bedfile_path))
         f.write('output_folder\t{}\n'.format(output_folder))  
-        f.write('reverse_stranded\t{}\n'.format(reverse_stranded))  
+        f.write('strandedness\t{}\n'.format(strandedness))  
         f.write('barcode_tag\t{}\n'.format(barcode_tag))  
         f.write('barcode_whitelist_file\t{}\n'.format(barcode_whitelist_file))  
         f.write('contigs\t{}\n'.format(contigs))  
@@ -273,7 +274,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         overall_label_to_list_of_contents, results, total_seconds_for_reads_df = edit_finder(
             bam_filepath, 
             output_folder, 
-            reverse_stranded,
+            strandedness,
             barcode_tag,
             barcode_whitelist,
             contigs,
@@ -448,11 +449,12 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("Adding strand-specific conversion...\n")
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
-        final_site_level_information_df['strand_conversion'] = final_site_level_information_df.apply(get_strand_specific_conversion, args=(reverse_stranded,), axis=1)
+        final_site_level_information_df['strand_conversion'] = final_site_level_information_df.apply(get_strand_specific_conversion, args=(strandedness,), axis=1)
         final_site_level_information_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t', index=False)
         final_path_already_exists = True
 
+        
         if sailor:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
 
@@ -478,7 +480,20 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
         not annotating with feature information and strand-specific conversions.")
+
+    if final_path_already_exists:
+        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
         
+        # Make plot of edit distributions
+        plot_folder = '{}/plots'.format(output_folder)
+        make_folder(plot_folder)
+        
+        final_site_level_information_df.groupby('strand_conversion').count()['count'].plot(kind='barh')
+        plt.title("Edit Distribution for {}".format(output_folder.split("/")[-1]))
+        plt.savefig("{}/conversion_distribution.png".format(plot_folder))
+
+    
     if final_path_already_exists and annotation_bedfile_path:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
@@ -508,32 +523,33 @@ if __name__ == '__main__':
     parser.add_argument('--bam_filepath', type=str, default=None)
     parser.add_argument('--annotation_bedfile_path', type=str, default=None)
 
-    parser.add_argument('--output_folder', type=str, default=None)
+    parser.add_argument('--output_folder', type=str, default=None, help="Directory in which all results will be generated, will be created if it does not exist")
     
-    parser.add_argument('--barcode_whitelist_file', type=str, default=None)
+    parser.add_argument('--barcode_whitelist_file', type=str, default=None, help="List of cell barcodes to use for single-cell analysis")
     
     parser.add_argument('--cores', type=int, default=multiprocessing.cpu_count())
     
-    parser.add_argument('--reverse_stranded', dest='reverse_stranded', action='store_true')
+    parser.add_argument('--strandedness', type=int, 
+                        help='If flag is used, then assume read 2 maps to the sense strand (and read 1 to antisense), otherwise assume read 1 maps to the sense strand')
 
     parser.add_argument('--coverage', dest='coverage_only', action='store_true')
     parser.add_argument('--filtering', dest='filtering_only', action='store_true')
     parser.add_argument('--annotation', dest='annotation_only', action='store_true')
 
-    parser.add_argument('--barcode_tag', type=str, default=None)
+    parser.add_argument('--barcode_tag', type=str, default=None, help='CB for typical 10X experiment. For long-read and single-cell long read analyses, manually add an IS tag for isoform or an IB tag for barcode+isoform information. Leave blank for bulk seqencing')
     
-    parser.add_argument('--min_dist_from_end', type=int, default=0)
+    parser.add_argument('--min_dist_from_end', type=int, default=0, help='Minimum distance from the end of a read an edit has to be in order to be counted'),
 
-    parser.add_argument('--min_base_quality', type=int, default=15)
+    parser.add_argument('--min_base_quality', type=int, default=15, help='Minimum base quality, default is 15')
     parser.add_argument('--contigs', type=str, default='all')
-    parser.add_argument('--min_read_quality', type=int, default=0)
+    parser.add_argument('--min_read_quality', type=int, default=0, help='Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this filter')
     
     parser.add_argument('--sailor', dest='sailor', action='store_true')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
-    parser.add_argument('--paired_end', dest='paired_end', action='store_true')
+    parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
-    parser.add_argument('--num_intervals_per_contig', type=int, default=200)
+    parser.add_argument('--num_intervals_per_contig', type=int, default=200, help='Intervals to split analysis into... more intervals can yield faster perforamance especially with multiple cores')
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
@@ -541,7 +557,7 @@ if __name__ == '__main__':
     output_folder = args.output_folder
     barcode_whitelist_file = args.barcode_whitelist_file
     cores = args.cores
-    reverse_stranded = args.reverse_stranded
+    strandedness = args.strandedness
     contigs = args.contigs
     annotation_bedfile_path = args.annotation_bedfile_path
     
@@ -561,10 +577,16 @@ if __name__ == '__main__':
     max_edits_per_read = args.max_edits_per_read
     
     num_intervals_per_contig = args.num_intervals_per_contig
-    
+
+    assert(strandedness in [0, 1, 2])
+
+    if not os.path.exists(output_folder):
+        pretty_print("{} (output folder) does not exist, making folder...".format(output_folder))
+        os.mkdir(output_folder)
+        
     if cores is None:
         cores = 16
-    pretty_print("Assuming {} cores available for multiprocessing".format(cores))
+    pretty_print("Assuming {} cores available for multiprocessing. Set this to the number of available cores for optimal execution.".format(cores))
    
     
     assert(not(coverage_only and filtering_only))
@@ -574,7 +596,7 @@ if __name__ == '__main__':
                   "\tAnnotation bedfile filepath:\t{}".format(annotation_bedfile_path),
                   "\tOutput folder:\t{}".format(output_folder),
                   "\tBarcode whitelist:\t{}".format(barcode_whitelist_file),
-                  "\tReverse Stranded:\t{}".format(reverse_stranded),
+                  "\tStrandedness:\t{}".format(strandedness),
                   "\tBarcode Tag:\t{}".format(barcode_tag),
                   "\tPaired End:\t{}".format(paired_end),
                   "\tCoverage only:\t{}".format(coverage_only),
@@ -605,7 +627,7 @@ if __name__ == '__main__':
         annotation_bedfile_path,
         output_folder, 
         contigs=contigs,
-        reverse_stranded=reverse_stranded,
+        strandedness=strandedness,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,

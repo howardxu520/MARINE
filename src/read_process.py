@@ -107,7 +107,7 @@ def print_read_info(read):
 
     print(str(read))
     
-def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_stranded=True, min_read_quality = 0):
+def get_read_information(read, contig, barcode_tag='CB', verbose=False, strandedness=0, min_read_quality = 0):
     if barcode_tag is None:
         read_barcode = 'no_barcode'
     elif read.has_tag(barcode_tag):
@@ -127,34 +127,36 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, reverse_
     is_reverse = read.is_reverse
     reverse_or_forward = '+'
 
+    is_read1 = read.is_read1
+    is_read2 = read.is_read2
+
     if barcode_tag:
-        # Single-cell (10x)
-        
-        if is_reverse:
-            reverse_or_forward = '-'
-            
-    elif (read.is_read1 or read.is_read2):
-        # Paired end
-        if reverse_stranded:
-            if (read.is_read1 and not is_reverse) or (read.is_read2 and is_reverse):
+        # Assuming R2 from 10x data contains the seqence 
+        is_read1 = False
+        is_read2 = True
+    
+    if is_read1 or is_read2:
+        # Paired end or single-cell
+        if strandedness == 2:
+            if (is_read1 and not is_reverse) or (is_read2 and is_reverse):
                 reverse_or_forward = '-'
                 
-        if not reverse_stranded:
-            if (read.is_read1 and is_reverse) or (read.is_read2 and not is_reverse):
+        elif strandedness == 1:
+            if (is_read1 and is_reverse) or (is_read2 and not is_reverse):
                 reverse_or_forward = '-'
     
     else:
         # Single end
         if is_reverse:
-            if reverse_stranded:
+            if strandedness == 2:
                 reverse_or_forward = '+'
             else:
-                reverse_stranded = '-'
+                reverse_or_forward = '-'
         else:
-            if reverse_stranded:
+            if strandedness == 2:
                 reverse_or_forward = '-'
             else:
-                reverse_stranded = '+'
+                reverse_or_forward = '+'
         
         
     reference_start = read.reference_start
