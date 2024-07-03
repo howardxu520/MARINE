@@ -33,11 +33,10 @@ Simply git clone this repository using the link at the top right on the main rep
 
 ### Command parameters
 ```
-usage: marine.py [-h] [--bam_filepath BAM_FILEPATH] [--annotation_bedfile_path ANNOTATION_BEDFILE_PATH] [--output_folder OUTPUT_FOLDER]
-                 [--barcode_whitelist_file BARCODE_WHITELIST_FILE] [--cores CORES] [--reverse_stranded] [--coverage] [--filtering] [--annotation]
-                 [--barcode_tag BARCODE_TAG] [--min_dist_from_end MIN_DIST_FROM_END] [--min_base_quality MIN_BASE_QUALITY] [--contigs CONTIGS]
-                 [--min_read_quality MIN_READ_QUALITY] [--sailor] [--verbose] [--paired_end] [--max_edits_per_read MAX_EDITS_PER_READ]
-                 [--num_intervals_per_contig NUM_INTERVALS_PER_CONTIG]
+usage: marine.py [-h] [--bam_filepath BAM_FILEPATH] [--annotation_bedfile_path ANNOTATION_BEDFILE_PATH] [--output_folder OUTPUT_FOLDER] [--barcode_whitelist_file BARCODE_WHITELIST_FILE]
+                 [--cores CORES] [--strandedness STRANDEDNESS] [--coverage] [--filtering] [--annotation] [--barcode_tag BARCODE_TAG] [--min_dist_from_end MIN_DIST_FROM_END]
+                 [--min_base_quality MIN_BASE_QUALITY] [--contigs CONTIGS] [--min_read_quality MIN_READ_QUALITY] [--sailor] [--verbose] [--paired_end] [--skip_coverage]
+                 [--max_edits_per_read MAX_EDITS_PER_READ] [--num_intervals_per_contig NUM_INTERVALS_PER_CONTIG]
 
 Run MARINE
 
@@ -46,22 +45,34 @@ optional arguments:
   --bam_filepath BAM_FILEPATH
   --annotation_bedfile_path ANNOTATION_BEDFILE_PATH
   --output_folder OUTPUT_FOLDER
+                        Directory in which all results will be generated, will be created if it does not exist
   --barcode_whitelist_file BARCODE_WHITELIST_FILE
+                        List of cell barcodes to use for single-cell analysis
   --cores CORES
-  --reverse_stranded
+  --strandedness STRANDEDNESS
+                        If flag is used, then assume read 2 maps to the sense strand (and read 1 to antisense), otherwise assume read 1 maps to the sense strand
   --coverage
   --filtering
   --annotation
   --barcode_tag BARCODE_TAG
+                        CB for typical 10X experiment. For long-read and single-cell long read analyses, manually add an IS tag for isoform or an IB tag for barcode+isoform information.
+                        Leave blank for bulk seqencing
   --min_dist_from_end MIN_DIST_FROM_END
+                        Minimum distance from the end of a read an edit has to be in order to be counted
   --min_base_quality MIN_BASE_QUALITY
+                        Minimum base quality, default is 15
   --contigs CONTIGS
   --min_read_quality MIN_READ_QUALITY
+                        Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this
+                        filter
   --sailor
   --verbose
-  --paired_end
+  --paired_end          Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire
+                        pair, whether they show up on both ends or not.
+  --skip_coverage
   --max_edits_per_read MAX_EDITS_PER_READ
   --num_intervals_per_contig NUM_INTERVALS_PER_CONTIG
+                        Intervals to split analysis into... more intervals can yield faster perforamance especially with multiple cores
 ```
 
 # Example commands below are drawn from files in the "examples" folder
@@ -71,7 +82,7 @@ The examples should take no more than a few minutes to run, especially if multip
 Expected example outputs are contained in the subfolders in the examples folder.
 
 ## Single-cell example MARINE command
-MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs.
+MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs. Strandedness for 10X inputs should be 2.
 
 ![Finding edits in single cells](images/only_5_cells_test_example.png)
 
@@ -81,7 +92,8 @@ python marine.py \
 --output_folder examples/sc_subset_CT \
 --barcode_whitelist_file examples/data/sc_barcodes.tsv.gz \
 --barcode_tag "CB" \
---num_intervals_per_contig 16
+--num_intervals_per_contig 16 \
+--strandedness 2
 ```
 
 ## Single-cell long read (PacBio) example MARINE command
@@ -96,6 +108,7 @@ python marine.py \
 --barcode_whitelist_file examples/data/sc_lr_barcodes.tsv.gz \
 --barcode_tag "IB" \
 --num_intervals_per_contig 16
+--strandedness 2
 ```
 
 ## Bulk (single-end) example MARINE command
@@ -107,6 +120,7 @@ python marine.py \
 --reverse_stranded \
 --cores 16 \
 --annotation_bedfile_path /annotations/hg38_gencode.v35.annotation.genes.bed \
+--strandedness 2
 --contigs "chr1"
 ```
 
@@ -118,5 +132,6 @@ python marine.py \
 --cores 16 \
 --annotation_bedfile_path /annotations/hg38_gencode.v35.annotation.genes.bed \
 --contigs "chr1" \
+--strandedness 2 \
 --paired_end
 ```

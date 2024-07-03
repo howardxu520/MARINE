@@ -18,3 +18,16 @@ tax1bp3_chr17_3665556.bam and tax1bp3_chr17_3665556_read.bam (edits at chr17 366
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Should be one G>A edit on one read at this position. But since it is a negative stranded gene, TAX1BP3, ultimate
 conversion would be C>T.
+
+
+pair_test (pair_example_18_49488551_49590000.sorted.bam) (edits in RPL17 (-) at 49491556, edits in LIPG (+) at 49567494)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In RPL17, we have 5 reads but actually have just two different pairs. One pair has both ends overlapping at this 
+location, and is duplicated, so there are 4 reads with the edit that are all actually just 1 read. The other pair has
+just one end at this location, so it contributes 1 read. So there are 2 edited uniqe pairs and a coverage of 2 for 
+RPL17 at position 18:49491556.
+
+In LIPG we have 3 reads but just two different pairs. One pair has both ends overlapping at this location, so there are 
+2 reads with the edit that are both actually just different ends of 1 read. The other pair has just one end at this 
+location, so it contributes 1 read. So there are 2 edited uniqe pairs and a coverage of 2 for LIPG at position 18:49567494.
+

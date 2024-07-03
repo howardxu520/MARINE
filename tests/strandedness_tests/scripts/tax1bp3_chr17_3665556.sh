@@ -13,6 +13,7 @@ python \
 --cores \
 16 \
 --paired_end \
+--strandedness 2 \
 --contigs "chr17" \
 --sailor \
 --verbose \

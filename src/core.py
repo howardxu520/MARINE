@@ -24,12 +24,12 @@ get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes
 import os, psutil
 
 
-def run_edit_identifier(bampath, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality = 0):
+def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality = 0):
     # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
     make_folder(edit_info_subfolder)
     
-    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, reverse_stranded, barcode_tag, barcode_whitelist, contigs, num_intervals_per_contig, verbose, min_read_quality)
+    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag, barcode_whitelist, contigs, num_intervals_per_contig, verbose, min_read_quality)
     pretty_print("{} total jobs".format(len(edit_finding_jobs)))
     
     # Performance statistics
@@ -116,7 +116,7 @@ def write_bam_file(reads, bam_file_name, header_string):
         print("Failed at indexing {}, {}".format(bam_file_name, e))
         
 
-def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_tag="CB", reverse_stranded=True, barcode_whitelist=None, verbose=False, min_read_quality = 0):  
+def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_tag="CB", strandedness=0, barcode_whitelist=None, verbose=False, min_read_quality = 0):  
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
         
     time_reporting = {}
@@ -163,7 +163,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
                     continue
             
             try:
-                error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, reverse_stranded=reverse_stranded, barcode_tag=barcode_tag, verbose=verbose, min_read_quality=min_read_quality)
+                error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, strandedness=strandedness, barcode_tag=barcode_tag, verbose=verbose, min_read_quality=min_read_quality)
             except Exception as e:
                 print("Failed getting read info on\n{}, {}".format(read.to_string(), e))
                 break
@@ -217,9 +217,9 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     return barcode_to_concatted_reads, total_reads, counts, time_reporting
         
 
-def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_folder, reverse_stranded=True, barcode_tag="CB", barcode_whitelist=None, verbose=False, min_read_quality = 0):
+def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_folder, strandedness=0, barcode_tag="CB", barcode_whitelist=None, verbose=False, min_read_quality = 0):
     barcode_to_concatted_reads, total_reads, counts, time_reporting = find_edits(bampath, contig, split_index,
-                                                                         start, end, output_folder, barcode_tag=barcode_tag, reverse_stranded=reverse_stranded,
+                                                                         start, end, output_folder, barcode_tag=barcode_tag, strandedness=strandedness,
                                                                                  barcode_whitelist=barcode_whitelist, verbose=verbose,
                                                                                  min_read_quality=min_read_quality
                                                                                 )    
@@ -232,7 +232,7 @@ import random
 def find_edits_and_split_bams_wrapper(parameters):
     try:
         start_time = time.perf_counter()
-        bampath, contig, split_index, start, end, output_folder, reverse_stranded, barcode_tag, barcode_whitelist, verbose, min_read_quality = parameters
+        bampath, contig, split_index, start, end, output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality = parameters
         label = '{}({}):{}-{}'.format(contig, split_index, start, end)
         
         barcode_to_concatted_reads, total_reads, counts, time_reporting = find_edits_and_split_bams(
@@ -242,7 +242,7 @@ def find_edits_and_split_bams_wrapper(parameters):
             start, 
             end,                                                           
             output_folder, 
-            reverse_stranded,
+            strandedness,
             barcode_tag=barcode_tag,
             barcode_whitelist=barcode_whitelist,
             verbose=verbose,
@@ -281,7 +281,7 @@ def find_edits_and_split_bams_wrapper(parameters):
         return contig, label, barcode_to_concatted_reads_pl, total_reads, counts_df, time_df, total_time
     except Exception as e:
         print('Contig {}: {}'.format(label, e))
-        return 0, pd.DataFrame(), label, pd.DataFrame()
+        return 0, label, pd.DataFrame(), 0, pd.DataFrame(), pd.DataFrame(), 0
     
     
     

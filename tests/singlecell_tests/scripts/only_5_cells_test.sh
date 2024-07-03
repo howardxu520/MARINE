@@ -3,7 +3,7 @@ python \
 --bam_filepath \
 /tscc/projects/ps-yeolab3/ekofman/sailor2/tests/singlecell_tests/bams/9_3000526_only_5_cells.bam \
 --annotation_bedfile_path \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/hg38_gencode.v35.annotation.genes.bed \
+/tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/cellranger-mm10-3.0.0.annotation.genes.bed \
 --output_folder \
 /tscc/projects/ps-yeolab3/ekofman/sailor2/tests/singlecell_tests/only_5_cells_test \
 --min_dist_from_end \
@@ -13,6 +13,7 @@ python \
 --cores \
 16 \
 --barcode_tag "CB" \
+--strandedness 2 \
 --contigs "9" \
 --verbose \
 --num_intervals_per_contig 16
