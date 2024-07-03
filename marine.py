@@ -452,7 +452,29 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         final_site_level_information_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t', index=False)
         final_path_already_exists = True
-        
+
+        if sailor:
+            print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
+
+            # Output SAILOR-formatted file for use in FLARE downstream
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # 1       629275  629276  0.966040688     2,30    +
+            # 1       629309  629310  2.8306e-05      1,1043  +
+    
+            conversion = 'C>T'
+            sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion, skip_coverage=skip_coverage)
+            sailor_sites = sailor_sites.drop_duplicates()
+
+            print("{} final deduplicated SAILOR-formatted sites".format(len(sailor_sites)))
+            sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+                output_folder, 
+                conversion.replace(">", "-")), 
+                header=False,
+                index=False,       
+                sep='\t')
+    
+            weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
+                
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
         not annotating with feature information and strand-specific conversions.")
@@ -466,32 +488,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                   sep='\t', index=False)
         final_annotated_path_already_exists = True
 
-    
-    if final_annotated_path_already_exists:
-        final_annotated_site_level_information_df = pd.read_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), 
-                                                  sep='\t')
-        
-        if sailor:
-            print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
-
-            # Output SAILOR-formatted file for use in FLARE downstream
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            # 1       629275  629276  0.966040688     2,30    +
-            # 1       629309  629310  2.8306e-05      1,1043  +
-    
-            conversion = 'C>T'
-            sailor_sites,weird_sites = get_sailor_sites(final_annotated_site_level_information_df, conversion, skip_coverage=skip_coverage)
-            sailor_sites = sailor_sites.drop_duplicates()
-
-            print("{} final deduplicated SAILOR-formatted sites".format(len(sailor_sites)))
-            sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
-                output_folder, 
-                conversion.replace(">", "-")), 
-                header=False,
-                index=False,       
-                sep='\t')
-    
-            weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
 
     # Check memory usage
     current, peak = tracemalloc.get_traced_memory()

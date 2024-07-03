@@ -54,8 +54,9 @@ def annotate_sites(sites_df, annotation_bedfile_path):
      'feature_chrom', 'feature_start', 'feature_end', 'feature_name', 'feature_type', 'feature_strand']
     annotation_intersect.columns = new_cols
     annotation_intersect = annotation_intersect[['site_id', 'feature_name', 'feature_strand', 'feature_type']]
-
-    annotation_intersect_agg = annotation_intersect.groupby('site_id').agg({'feature_name': ','.join, 'feature_type': ','.join})
+    annotation_intersect = annotation_intersect.replace(-1, '.')
+    
+    annotation_intersect_agg = annotation_intersect.groupby('site_id').agg({'feature_name': ','.join, 'feature_type': ','.join, 'feature_strand': ','.join})
                                                              
     sites_with_annot_df = sites_df.merge(annotation_intersect_agg, on='site_id')
 
