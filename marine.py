@@ -14,6 +14,7 @@ from sys import getsizeof
 import time
 from tqdm import tqdm
 import tracemalloc
+from matplotlib import pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
@@ -453,6 +454,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                   sep='\t', index=False)
         final_path_already_exists = True
 
+        
         if sailor:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
 
@@ -478,7 +480,20 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
         not annotating with feature information and strand-specific conversions.")
+
+    if final_path_already_exists:
+        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
         
+        # Make plot of edit distributions
+        plot_folder = '{}/plots'.format(output_folder)
+        make_folder(plot_folder)
+        
+        final_site_level_information_df.groupby('strand_conversion').count()['count'].plot(kind='barh')
+        plt.title("Edit Distribution for {}".format(output_folder.split("/")[-1]))
+        plt.savefig("{}/conversion_distribution.png".format(plot_folder))
+
+    
     if final_path_already_exists and annotation_bedfile_path:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
