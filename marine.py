@@ -52,6 +52,7 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
         cores=cores,
         min_read_quality=min_read_quality
     )
+
     
     #print(overall_label_to_list_of_contents.keys())
     #print(overall_label_to_list_of_contents.get(list(overall_label_to_list_of_contents.keys())[0]))
@@ -84,7 +85,8 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
                                                                       barcode_tag=barcode_tag,
                                                                       number_of_expected_bams=number_of_expected_bams
                                                                      )
-    pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
+    if verbose:
+        pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
     
     
     # BAM Generation
@@ -283,7 +285,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             cores=cores,
             min_read_quality=min_read_quality
         )
-
+        
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
         # REMOVE
         #sys.exit()
@@ -480,6 +482,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
         not annotating with feature information and strand-specific conversions.")
+    
+    if final_path_already_exists and annotation_bedfile_path:
+        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
+        final_site_level_information_annotated_df = annotate_sites(final_site_level_information_df,
+                                                                   annotation_bedfile_path)
+        final_site_level_information_annotated_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), 
+                                                  sep='\t', index=False)
+        final_annotated_path_already_exists = True
+
 
     if final_path_already_exists:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
@@ -492,18 +504,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         final_site_level_information_df.groupby('strand_conversion').count()['count'].plot(kind='barh')
         plt.title("Edit Distribution for {}".format(output_folder.split("/")[-1]))
         plt.savefig("{}/conversion_distribution.png".format(plot_folder))
-
-    
-    if final_path_already_exists and annotation_bedfile_path:
-        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
-                                                  sep='\t')
-        final_site_level_information_annotated_df = annotate_sites(final_site_level_information_df,
-                                                                   annotation_bedfile_path)
-        final_site_level_information_annotated_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), 
-                                                  sep='\t', index=False)
-        final_annotated_path_already_exists = True
-
-
+        
+        
     # Check memory usage
     current, peak = tracemalloc.get_traced_memory()
 
