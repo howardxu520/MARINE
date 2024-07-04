@@ -111,7 +111,12 @@ python marine.py \
 --strandedness 2
 ```
 
-## Bulk (single-end) example MARINE command
+This is derived from an APOBEC1-fusion experiment, so we expect an enrichment for C>T (C>U) edits.
+
+
+![Single-cell CT expected edit distribution](images/sc_subset_CT_distribution.png)
+
+## Bulk example MARINE command
 
 ```
 python marine.py \
@@ -123,6 +128,18 @@ python marine.py \
 --strandedness 2
 --contigs "chr1"
 ```
+
+This is derived from an APOBEC1-fusion experiment, so we should also expect to see an enrichment for C>T (C>U) edits:
+
+
+![Bulk CT expected edit distribution](images/bulk_subset_CT_distribution.png)
+
+Likewise, using bulk_subset_AI.md.subset.bam, which derives from an experiment using an A to I editor, we
+should expect to see to see an enrichment for A>G (I is interpreted as a G) edits:
+
+
+![Bulk AI expected edit distribution](images/bulk_subset_AI_distribution.png)
+
 
 ## Bulk (paired-end) example MARINE command -- example not provided 
 ```
