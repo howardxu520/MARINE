@@ -1,7 +1,9 @@
 F1R2_pair.bam (edit at chr17 43044352)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Paired ends where the ends overlap. They both contain the same G>A conversion, so this edit should only be counted once,
-and the read should only be counted once. So at chr17 43044352 we should see 1 edit and 1 read depth coverage, as a G>A. 
+and the read should only be counted once if MARINE is run in --paired_end mode.
+So at chr17 43044352 we should see 1 edit and 1 read depth coverage, as a G>A. If --paired_end mode is not used, the
+number of edits will not be double-counted but the coverage will be, so coverage at this position will be 2. 
 
 F2R1_end.bam (edits at chr 17 43001715, 43001716, 43001717)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
