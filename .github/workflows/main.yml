@@ -35,6 +35,11 @@ jobs:
         run: |
           export PATH=$PATH:$(pwd)
           echo $PATH
+ 
+      - name: Enable relative path resolution by exporting main directory as MARINE env
+        run: |
+          export MARINE=$(pwd)
+          echo $MARINE
           
       - name: Execute Integration Tests
         run: |
