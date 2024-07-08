@@ -27,16 +27,16 @@ jobs:
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
 
-      - name: Init mamba environment
-        run: |    
-          /usr/share/miniconda/bin/mamba init
-          
+      - name: Print marine_environment folder contents
+        run: |
+          ls /usr/share/miniconda/envs/marine_environment
+
       - name: Execute Integration Tests
         run: |
           echo "running source"
           source /home/runner/.bashrc
           echo "running init"
-          conda init
+          conda init bash
 
           CONDA_BASE=$(conda info --base) ; source $CONDA_BASE/etc/profile.d/conda.sh
           
