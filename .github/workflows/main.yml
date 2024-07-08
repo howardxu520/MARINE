@@ -35,13 +35,7 @@ jobs:
         run: |
           export PATH=$PATH:$(pwd)
           echo $PATH
- 
-      - name: Enable relative path resolution by exporting main directory as MARINE env
-        run: |
-          export MARINE=$(pwd)
-          echo $MARINE
-          ls $MARINE
-          
+                    
       - name: Execute Integration Tests
         run: |
           echo "running source"
@@ -55,9 +49,13 @@ jobs:
           conda activate marine_environment
 
           which python
+
+          export MARINE=$(pwd)
+          echo $MARINE
+          ls $MARINE
           
           echo "running test"
           cd tests
           pwd
-  
+
           bash integration_tests_run.sh /usr/share/miniconda/envs/marine_environment/bin/python
