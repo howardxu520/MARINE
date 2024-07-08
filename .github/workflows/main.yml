@@ -21,7 +21,8 @@ jobs:
         run: |
       
           ls /usr/share/miniconda/bin/
-
+          ls /usr/share/miniconda/
+           
       - name: Create Conda Environment
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
@@ -37,8 +38,7 @@ jobs:
           echo "running init"
           conda init
 
-          echo "running source"
-          /home/runner/.bashrc
+          CONDA_BASE=$(conda info --base) ; source $CONDA_BASE/etc/profile.d/conda.sh
           
           echo "running activate"
           conda activate marine_environment
