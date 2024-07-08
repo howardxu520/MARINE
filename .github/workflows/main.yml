@@ -35,7 +35,7 @@ jobs:
           echo "running source"
           source /home/runner/.bashrc
           echo "running init"
-          /usr/share/miniconda/bin/mamba init
+          /usr/share/miniconda/bin/conda init
           echo "running activate"
           /usr/share/miniconda/bin/conda activate marine_environment
           echo "running test"
