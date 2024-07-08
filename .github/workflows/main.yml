@@ -20,17 +20,13 @@ jobs:
       - name: Print environment variables
         run: |
           printenv
+          ls /usr/share/miniconda/bin/
           
-      - name: Find Mamba executable path
-        run: |
-          MAMBA_PATH=$(which mamba)
-          echo "Mamba is installed at: $MAMBA_PATH"
-
       - name: Create Conda Environment
         run: |
-          $MAMBA_PATH create -n marine_environment python=3.10 -y
+          /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
           conda activate marine_environment
-          $MAMBA_PATH env update -n marine_environment -f marine_environment.yml
+          /usr/share/miniconda/bin/mamba env update -n marine_environment -f marine_environment.yml
 
       - name: Execute Integration Tests
         run: |
