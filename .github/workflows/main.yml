@@ -17,9 +17,9 @@ jobs:
         run: |
           conda install -c conda-forge mamba -y
           
-      - name: Print environment variables
+      - name: Print conda folder contents
         run: |
-          printenv
+      
           ls /usr/share/miniconda/bin/
 
       - name: Create Conda Environment
@@ -30,10 +30,15 @@ jobs:
         run: |    
           /usr/share/miniconda/bin/mamba init
 
+      - name: Which mamba?
+        run: |
+          which mamba
+          
       - name: Initialize mamba and activate
         run: |    
           source /home/runner/.bashrc
-          /usr/share/miniconda/bin/mamba activate marine_environment
+          mamba init
+          mamba activate marine_environment
 
       - name: Execute Integration Tests
         run: |
