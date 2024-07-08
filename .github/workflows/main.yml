@@ -1,0 +1,50 @@
+name: integration_test_cli
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo content
+        uses: actions/checkout@v2
+
+      - name: Install Mamba
+        run: |
+          conda install -c conda-forge mamba -y
+          
+      - name: Print conda folder contents
+        run: |
+      
+          ls /usr/share/miniconda/bin/
+          ls /usr/share/miniconda/
+           
+      - name: Create Conda Environment
+        run: |
+          /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
+
+      - name: Print marine_environment bin folder contents
+        run: |
+          ls /usr/share/miniconda/envs/marine_environment/bin
+
+      - name: Execute Integration Tests
+        run: |
+          echo "running source"
+          source /home/runner/.bashrc
+          echo "running init"
+          conda init bash
+
+          CONDA_BASE=$(conda info --base) ; source $CONDA_BASE/etc/profile.d/conda.sh
+          
+          echo "running activate"
+          conda activate marine_environment
+          
+          echo "running test"
+          cd tests
+          pwd
+  
+          bash integration_tests_run.sh /usr/share/miniconda/envs/marine_environment/bin/python
