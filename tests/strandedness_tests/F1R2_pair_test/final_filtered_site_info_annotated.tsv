@@ -1,4 +1,0 @@
-site_id	barcode	contig	position	ref	alt	strand	count	coverage	conversion	strand_conversion	feature_name	feature_type	feature_strand
-no_barcode_chr17_43044352_G_A_-	no_barcode	chr17	43044352	G	A	-	1	1	G>A	C>T	BRCA1	protein_coding	-
-no_barcode_chr17_43044356_T_G_-	no_barcode	chr17	43044356	T	G	-	1	1	T>G	A>C	BRCA1	protein_coding	-
-no_barcode_chr17_43044331_A_C_-	no_barcode	chr17	43044331	A	C	-	1	1	A>C	T>G	BRCA1	protein_coding	-

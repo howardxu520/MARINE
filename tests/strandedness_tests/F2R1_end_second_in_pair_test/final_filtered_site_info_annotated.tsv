@@ -1,4 +1,0 @@
-site_id	barcode	contig	position	ref	alt	strand	count	coverage	conversion	strand_conversion	feature_name	feature_type	feature_strand
-no_barcode_chr17_43001715_A_G_+	no_barcode	chr17	43001715	A	G	+	1	1	A>G	A>G	RPL27	protein_coding	+
-no_barcode_chr17_43001717_A_G_+	no_barcode	chr17	43001717	A	G	+	1	1	A>G	A>G	RPL27	protein_coding	+
-no_barcode_chr17_43001716_G_A_+	no_barcode	chr17	43001716	G	A	+	1	1	G>A	G>A	RPL27	protein_coding	+

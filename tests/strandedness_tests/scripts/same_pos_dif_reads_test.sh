@@ -1,4 +1,6 @@
-marine.py \
+mypython=$1
+
+$mypython $MARINE/marine.py \
 --bam_filepath \
 $MARINE/tests/strandedness_tests/bams/same_pos_dif_reads.bam \
 --annotation_bedfile_path \

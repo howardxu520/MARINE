@@ -1,11 +1,12 @@
-python \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/marine.py \
+mypython=$1
+
+$mypython $MARINE/marine.py \
 --bam_filepath \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/tests/singlecell_tests/bams/9_3000526_only_5_cells.bam \
+$MARINE/tests/singlecell_tests/bams/9_3000526_only_5_cells.bam \
 --annotation_bedfile_path \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/cellranger-mm10-3.0.0.annotation.genes.bed \
+$MARINE/annotations/cellranger-mm10-3.0.0.annotation.genes.bed \
 --output_folder \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/tests/singlecell_tests/only_5_cells_test \
+$MARINE/tests/singlecell_tests/only_5_cells_test \
 --min_dist_from_end \
 0 \
 --min_base_quality \

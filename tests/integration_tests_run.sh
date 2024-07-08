@@ -21,7 +21,7 @@ do
     rm $MARINE/tests/$tests_folder$t/* -r
 
     echo "Running tests..."
-    bash $MARINE/tests/$tests_folder/scripts/$t.sh 
+    bash $MARINE/tests/$tests_folder/scripts/$t.sh $mypython
    
 done
 
@@ -43,7 +43,7 @@ do
     rm $MARINE/tests/$tests_folder$t/* -r
 
     echo "Running tests..."
-    bash $MARINE/tests/$tests_folder/scripts/$t.sh 
+    bash $MARINE/tests/$tests_folder/scripts/$t.sh $mypython
    
 done
 

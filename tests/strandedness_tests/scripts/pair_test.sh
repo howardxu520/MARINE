@@ -1,4 +1,6 @@
-marine.py \
+mypython=$1
+
+$mypython $MARINE/marine.py \
 --bam_filepath \
 $MARINE/tests/strandedness_tests/bams/pair_example_18_49488551_49590000.sorted.bam \
 --annotation_bedfile_path \

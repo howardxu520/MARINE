@@ -1,3 +1,0 @@
-site_id	barcode	contig	position	ref	alt	strand	count	coverage	conversion	strand_conversion
-no_barcode_18_49491556_G_A_-	no_barcode	18	49491556	G	A	-	2	2	G>A	C>T
-no_barcode_18_49567494_C_T_+	no_barcode	18	49567494	C	T	+	2	2	C>T	C>T
