@@ -25,6 +25,7 @@ jobs:
       - name: Create Conda Environment
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
+          source /home/runner/.bashrc
           /usr/share/miniconda/bin/mamba init
           /usr/share/miniconda/bin/mamba activate marine_environment
           /usr/share/miniconda/bin/mamba env update -n marine_environment -f marine_environment.yml
