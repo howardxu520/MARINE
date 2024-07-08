@@ -26,10 +26,13 @@ jobs:
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
 
+      - name: Init mamba environment
+        run: |    
+          /usr/share/miniconda/bin/mamba init
+
       - name: Initialize mamba and activate
         run: |    
           source /home/runner/.bashrc
-          /usr/share/miniconda/bin/mamba init
           /usr/share/miniconda/bin/mamba activate marine_environment
 
       - name: Execute Integration Tests
