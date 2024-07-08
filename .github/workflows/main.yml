@@ -3,7 +3,7 @@ name: integration_test_cli
 on:
   push:
     branches:
-      - main  # Replace with your branch name
+      - main
 
 jobs:
   build:
@@ -13,16 +13,18 @@ jobs:
       - name: Checkout repo content
         uses: actions/checkout@v2
 
-      - name: Install Mamba
+      - name: Update Conda and Mamba
         run: |
+          conda update -n base -c defaults conda
           conda install -c conda-forge mamba
 
       - name: Create Conda Environment
         run: |
           mamba create -n marine_environment python=3.10 -y
           conda activate marine_environment
-          mamba env update -f marine_environment.yml -n marine_environment
+          mamba env update -n marine_environment -f marine_environment.yml
 
       - name: Execute Integration Tests
         run: |
+          conda activate marine_environment
           bash tests/integration_tests_run.sh
