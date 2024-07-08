@@ -31,6 +31,11 @@ jobs:
         run: |
           ls /usr/share/miniconda/envs/marine_environment/bin
 
+      - name: Add MARINE repo to path
+        run: |
+          export PATH=$PATH:$(pwd)
+          echo $PATH
+          
       - name: Execute Integration Tests
         run: |
           echo "running source"
