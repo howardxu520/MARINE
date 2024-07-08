@@ -28,9 +28,10 @@ jobs:
           source /home/runner/.bashrc
           /usr/share/miniconda/bin/mamba init
           /usr/share/miniconda/bin/mamba activate marine_environment
-          /usr/share/miniconda/bin/mamba env update -n marine_environment -f marine_environment.yml
 
       - name: Execute Integration Tests
         run: |
+          source /home/runner/.bashrc
+          /usr/share/miniconda/bin/mamba init
           /usr/share/miniconda/bin/mamba activate marine_environment
           bash tests/integration_tests_run.sh
