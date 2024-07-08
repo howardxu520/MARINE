@@ -29,20 +29,14 @@ jobs:
       - name: Init mamba environment
         run: |    
           /usr/share/miniconda/bin/mamba init
-
-      - name: Which mamba?
-        run: |
-          which mamba
           
-      - name: Initialize mamba and activate
-        run: |    
-          source /home/runner/.bashrc
-          mamba init
-          mamba activate marine_environment
-
       - name: Execute Integration Tests
         run: |
+          echo "running source"
           source /home/runner/.bashrc
+          echo "running init"
           /usr/share/miniconda/bin/mamba init
+          echo "running activate"
           /usr/share/miniconda/bin/mamba activate marine_environment
+          echo "running test"
           bash tests/integration_tests_run.sh
