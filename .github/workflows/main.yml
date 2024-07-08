@@ -22,14 +22,10 @@ jobs:
           printenv
           ls /usr/share/miniconda/bin/
 
-      - name: Initialize Conda
-        run: |
-          conda init bash  # Initialize Conda for bash shell
-          eval "$(conda shell.bash hook)"
-          
       - name: Create Conda Environment
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
+          conda init
           conda activate marine_environment
           /usr/share/miniconda/bin/mamba env update -n marine_environment -f marine_environment.yml
 
