@@ -37,6 +37,6 @@ jobs:
           echo "running init"
           /usr/share/miniconda/bin/mamba init
           echo "running activate"
-          /usr/share/miniconda/bin/mamba activate marine_environment
+          /usr/share/miniconda/bin/conda activate marine_environment
           echo "running test"
           bash tests/integration_tests_run.sh
