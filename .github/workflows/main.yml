@@ -13,16 +13,20 @@ jobs:
       - name: Checkout repo content
         uses: actions/checkout@v2
 
-      - name: Update Conda and Mamba
+      - name: Install Mamba
         run: |
-          conda update -n base -c defaults conda
-          conda install -c conda-forge mamba
+          conda install -c conda-forge mamba -y
+
+      - name: Find Mamba executable path
+        run: |
+          MAMBA_PATH=$(which mamba)
+          echo "Mamba is installed at: $MAMBA_PATH"
 
       - name: Create Conda Environment
         run: |
-          mamba create -n marine_environment python=3.10 -y
+          $MAMBA_PATH create -n marine_environment python=3.10 -y
           conda activate marine_environment
-          mamba env update -n marine_environment -f marine_environment.yml
+          $MAMBA_PATH env update -n marine_environment -f marine_environment.yml
 
       - name: Execute Integration Tests
         run: |
