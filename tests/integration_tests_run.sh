@@ -1,5 +1,10 @@
 mypython=$1
+
 echo "Python is $mypython"
+
+
+# MARINE environment variable must be set from main marine directory:
+#     export MARINE=$(pwd)
 
 echo "Running bulk tests..."
 

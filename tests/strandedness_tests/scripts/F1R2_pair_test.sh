@@ -1,11 +1,10 @@
-python \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/marine.py \
+marine.py \
 --bam_filepath \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/tests/strandedness_tests/bams/F1R2_pair.bam \
+$MARINE/tests/strandedness_tests/bams/F1R2_pair.bam \
 --annotation_bedfile_path \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/hg38_gencode.v35.annotation.genes.bed \
+$MARINE/annotations/hg38_gencode.v35.annotation.genes.bed \
 --output_folder \
-/tscc/projects/ps-yeolab3/ekofman/sailor2/tests/strandedness_tests/F1R2_pair_test \
+$MARINE/tests/strandedness_tests/F1R2_pair_test \
 --min_dist_from_end \
 0 \
 --min_base_quality \
