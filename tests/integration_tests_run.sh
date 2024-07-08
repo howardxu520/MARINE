@@ -15,10 +15,10 @@ for t in "F1R2_pair_test-single_end_mode" "F1R2_pair_test" "F2R1_end_second_in_p
 do
     echo $t
     echo "Removing old files..."
-    rm $tests_folder$t/* -r
+    rm $MARINE/tests/$tests_folder$t/* -r
 
     echo "Running tests..."
-    bash $tests_folder/scripts/$t.sh 
+    bash $MARINE/tests/$tests_folder/scripts/$t.sh 
    
 done
 
@@ -32,16 +32,16 @@ for t in "only_5_cells_test" "long_read_sc_test"
 do
     echo $t
     echo "Removing old files..."
-    rm $tests_folder$t/* -r
+    rm $MARINE/tests/$tests_folder$t/* -r
 
     echo "Running old tests..."
-    bash $tests_folder/scripts/$t.sh 
+    bash $MARINE/tests/$tests_folder/scripts/$t.sh 
    
 done
 
 
 echo "Checking results..."
-$mypython integration_tests_auto_check.py
+$mypython $MARINE/tests/integration_tests_auto_check.py
 
 exitcode=$?
 
