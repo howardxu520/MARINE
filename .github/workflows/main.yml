@@ -27,9 +27,9 @@ jobs:
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
 
-      - name: Print marine_environment folder contents
+      - name: Print marine_environment bin folder contents
         run: |
-          ls /usr/share/miniconda/envs/marine_environment
+          ls /usr/share/miniconda/envs/marine_environment/bin
 
       - name: Execute Integration Tests
         run: |
@@ -47,4 +47,4 @@ jobs:
           cd tests
           pwd
   
-          bash integration_tests_run.sh
+          bash integration_tests_run.sh /usr/share/miniconda/envs/marine_environment/bin/python
