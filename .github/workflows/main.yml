@@ -21,6 +21,11 @@ jobs:
         run: |
           printenv
           ls /usr/share/miniconda/bin/
+
+      - name: Initialize Conda
+        run: |
+          conda init bash  # Initialize Conda for bash shell
+          eval "$(conda shell.bash hook)"
           
       - name: Create Conda Environment
         run: |
