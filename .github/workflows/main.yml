@@ -44,4 +44,7 @@ jobs:
           conda activate marine_environment
           
           echo "running test"
-          bash tests/integration_tests_run.sh
+          cd tests
+          pwd
+  
+          bash integration_tests_run.sh
