@@ -26,7 +26,7 @@ jobs:
       - name: Create Conda Environment
         run: |
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.8.18 -y
-          /usr/share/miniconda/bin/mamba env update -n marine_environment --file marine_environment2.yml
+          /usr/share/miniconda/bin/mamba env update -n marine_environment --file marine_environment2.yaml
 
       - name: Print marine_environment bin folder contents
         run: |
