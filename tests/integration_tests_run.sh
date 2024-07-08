@@ -1,3 +1,6 @@
+mypython=$1
+echo "Python is $mypython"
+
 echo "Running bulk tests..."
 
 tests_folder="strandedness_tests/"
@@ -33,7 +36,7 @@ done
 
 
 echo "Checking results..."
-python integration_tests_auto_check.py
+$mypython integration_tests_auto_check.py
 
 exitcode=$?
 
