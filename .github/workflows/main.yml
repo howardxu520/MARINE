@@ -16,7 +16,11 @@ jobs:
       - name: Install Mamba
         run: |
           conda install -c conda-forge mamba -y
-
+          
+      - name: Print environment variables
+        run: |
+          printenv
+          
       - name: Find Mamba executable path
         run: |
           MAMBA_PATH=$(which mamba)
