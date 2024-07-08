@@ -1,22 +1,28 @@
 name: integration_test_cli
 
 on:
-  push
+  push:
+    branches:
+      - main  # Replace with your branch name
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: checkout repo content
-        uses: actions/checkout@v2 # checkout the repository content to github runner.
-      - name: setup python
-        uses: actions/setup-python@v2
+      - name: Checkout repo content
+        uses: actions/checkout@v2
+
+      - name: Setup Mamba
+        run: |
+          sudo apt-get update
+          sudo apt-get install mamba -y
+
       - name: Install dependencies
         run: |
-          conda env create -f marine_environment.yml -n marine_environment
+          mamba env create -f marine_environment.yml -n marine_environment
           conda activate marine_environment
-        ref: main
-      - name: execute py script # run file
+
+      - name: Execute integration tests
         run: |
           bash tests/integration_tests_run.sh
