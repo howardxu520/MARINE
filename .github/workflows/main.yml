@@ -31,11 +31,7 @@ jobs:
         run: |
           ls /usr/share/miniconda/envs/marine_environment/bin
 
-      - name: Add MARINE repo to path
-        run: |
-          export PATH=$PATH:$(pwd)
-          echo $PATH
-                    
+                              
       - name: Execute Integration Tests
         run: |
           echo "running source"
@@ -50,9 +46,14 @@ jobs:
 
           which python
 
+          echo "creating marine base dir environment variable..."
           export MARINE=$(pwd)
           echo $MARINE
           ls $MARINE
+
+          echo "Adding marine to path..."
+          export PATH=$PATH:$(pwd)
+          echo $PATH
           
           echo "running test"
           cd tests
