@@ -34,17 +34,17 @@ echo "SC tests scripts"
 ls -lh $MARINE/tests/$tests_folder/scripts/
 
 
-#for t in "only_5_cells_test" "long_read_sc_test"
-#
-#do
-#    echo $t
-#    echo "Removing old files..."
-#    rm $MARINE/tests/$tests_folder$t/* -r
-#
-#    echo "Running tests..."
-#    bash $MARINE/tests/$tests_folder/scripts/$t.sh $mypython
-#   
-#done
+for t in "only_5_cells_test" "long_read_sc_test"
+
+do
+    echo $t
+    echo "Removing old files..."
+    rm $MARINE/tests/$tests_folder$t/* -r
+
+    echo "Running tests..."
+    bash $MARINE/tests/$tests_folder/scripts/$t.sh $mypython
+   
+done
 
 
 echo "Checking results..."
