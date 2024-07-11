@@ -12,14 +12,22 @@ MARINE was developed and tested using Python 3.8.18 and is not guaranteed to wor
 Use the provided .yml file to create a new conda environment that contains all required dependencies, including the proper Python version, for MARINE:
 
 ```
-conda env create  --file=marine_environment.yml
+conda env create  --file=marine_environment2.yaml
+conda activate marine_environment
+```
+
+or if you encounter problems with this approach, try using mamba instead, which can be faster:
+
+```
+mamba create -n marine_environment python=3.8.18 -y
+mamba env update -n marine_environment --file marine_environment2.yaml
 conda activate marine_environment
 ```
 
 Notes:
 * The more cores used, the faster MARINE will run
 * Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
-* The annotation file should be tab-separated and should have a standard bed column ordering, as follows:
+* The annotation bedfile should be tab-separated and should have a standard bed6 column ordering, as follows:
 ```
 1       29554   31109   MIR1302-2HG     lincRNA  +       
 1       34554   36081   FAM138A         lincRNA  -       
