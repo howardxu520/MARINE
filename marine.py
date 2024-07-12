@@ -9,6 +9,7 @@ import polars as pl
 import psutil
 import pysam
 from scipy.special import betainc
+import shutil
 import sys
 from sys import getsizeof
 import time
@@ -33,6 +34,17 @@ from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
 
 from annotate import annotate_sites, get_strand_specific_conversion 
+
+def delete_intermediate_files(output_folder):
+    to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
+                 'concat_command.sh', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
+    for object in to_delete:
+        object_path = '{}/{}'.format(output_folder, object)
+
+        if os.path.isfile(object_path):
+            os.remove(object_path)
+        else:
+            shutil.rmtree(object_path)
 
 
 def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
@@ -237,7 +249,9 @@ def collate_edit_info_shards(output_folder):
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, skip_coverage=False):
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
+        keep_intermediate_files=False,
+        skip_coverage=False):
     
     print_marine_logo()
     
@@ -517,9 +531,13 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
     print(f'Time elapsed: {time.time()-start_time:.2f}s')
 
-    
+    if not keep_intermediate_files:
+        pretty_print("Deleting intermediate files...", style="-")
+        delete_intermediate_files(output_folder)
+
     pretty_print("Done!", style="+")
     
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
             
@@ -549,6 +567,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--sailor', dest='sailor', action='store_true')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
+    parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
@@ -570,6 +589,7 @@ if __name__ == '__main__':
     
     sailor = args.sailor
     verbose = args.verbose
+    keep_intermediate_files = args.keep_intermediate_files
     paired_end = args.paired_end
     skip_coverage = args.skip_coverage
     
@@ -614,6 +634,7 @@ if __name__ == '__main__':
                   "\tNumber of intervals:\t{}".format(num_intervals_per_contig),
                   "\tCores:\t{}".format(cores),
                   "\tVerbose:\t{}".format(verbose),
+                  "\tKeep intermediate files:\t{}".format(keep_intermediate_files),
                   "\tSkip coverage?:\t{}".format(skip_coverage)
                  ])
 
@@ -646,7 +667,8 @@ if __name__ == '__main__':
         cores = cores,
         verbose = verbose,
         number_of_expected_bams=num_intervals_per_contig,
-        skip_coverage=skip_coverage
+        skip_coverage=skip_coverage,
+        keep_intermediate_files=keep_intermediate_files
        )
     
     
