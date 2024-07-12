@@ -5,6 +5,9 @@ and the read should only be counted once if MARINE is run in --paired_end mode.
 So at chr17 43044352 we should see 1 edit and 1 read depth coverage, as a G>A. If --paired_end mode is not used, the
 number of edits will not be double-counted but the coverage will be, so coverage at this position will be 2. 
 
+First reads in pairs align to the forward strand.
+Should be on the BRCA1 gene. 
+
 F2R1_end.bam (edits at chr 17 43001715, 43001716, 43001717)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Paired ends, but F2R1 so that the second read in the pair is actually mapped to the forward strand. This second read
@@ -18,8 +21,7 @@ unique C>G edits with 9 total coverage, because many of these are pairs.
 
 tax1bp3_chr17_3665556.bam and tax1bp3_chr17_3665556_read.bam (edits at chr17 3665556)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Should be one G>A edit on one read at this position. But since it is a negative stranded gene, TAX1BP3, ultimate
-conversion would be C>T.
+Should be one G>A edit on one read at this position.
 
 
 pair_test (pair_example_18_49488551_49590000.sorted.bam) (edits in RPL17 (-) at 49491556, edits in LIPG (+) at 49567494)
@@ -33,3 +35,8 @@ In LIPG we have 3 reads but just two different pairs. One pair has both ends ove
 2 reads with the edit that are both actually just different ends of 1 read. The other pair has just one end at this 
 location, so it contributes 1 read. So there are 2 edited uniqe pairs and a coverage of 2 for LIPG at position 18:49567494.
 
+
+citrine435 (position 435)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+We have a C>T edit at position 435 across all reads in this paired-end example. However, the forward mapping reads are sometimes
+read1 and sometimes read2, and likewise for the reverse mapping reads (unstranded).

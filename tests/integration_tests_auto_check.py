@@ -2,6 +2,18 @@ import pandas as pd
 import sys
 
 test_name_to_expectations = {
+    "unstranded_pair_test": {
+        "folder": "strandedness_tests",
+        "expectations": [{
+            "contig": "Citrine.dna",
+            "position": 435,
+            "count": 22,
+            "coverage": 22,
+            "num_rows": 1,
+            "strand_conversion": "C>T",
+            "strand": "+"
+        }]
+    },
     "pair_test": {
         "folder": "strandedness_tests",
         "expectations": [{

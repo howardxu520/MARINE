@@ -106,7 +106,7 @@ dependencies:
   - pyopenssl             
   - pysam                 
   - pysocks               
-  - python                
+  - python           
   - python-dateutil       
   - python-tzdata         
   - python_abi            

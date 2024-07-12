@@ -2,6 +2,12 @@ import pybedtools
 import pandas as pd
 
 import pybedtools
+import os
+import sys
+
+bin_dir = os.path.dirname(sys.executable)
+pybedtools.set_bedtools_path(bin_dir)
+
 import pandas as pd
 
 
@@ -10,7 +16,7 @@ def make_bedtool_from_final_sites(df):
     return pybedtools.BedTool.from_dataframe(df_bed_cols)
 
 
-def get_strand_specific_conversion(r, reverse_stranded):
+def get_strand_specific_conversion(r, strandedness):
     ref_alt_dict = {
         'A': 'T',
         'T': 'A',
@@ -22,14 +28,9 @@ def get_strand_specific_conversion(r, reverse_stranded):
     alt = r.alt
     mapped_strand = r.strand
 
-    """
-    if reverse_stranded:
-        if mapped_strand == '+':
-            mapped_strand = '-'
-        elif mapped_strand == '-':
-            mapped_strand = '+'
-    """
-    
+    if strandedness == 0:
+        return '{}>{}'.format(ref, alt)
+        
     if mapped_strand == '+':
         return '{}>{}'.format(
             ref,
