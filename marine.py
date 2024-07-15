@@ -41,10 +41,11 @@ def delete_intermediate_files(output_folder):
     for object in to_delete:
         object_path = '{}/{}'.format(output_folder, object)
 
-        if os.path.isfile(object_path):
-            os.remove(object_path)
-        else:
-            shutil.rmtree(object_path)
+        if os.path.exists(object_path):
+            if os.path.isfile(object_path):
+                os.remove(object_path)
+            else:
+                shutil.rmtree(object_path)
 
 
 def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
@@ -249,12 +250,20 @@ def collate_edit_info_shards(output_folder):
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
         keep_intermediate_files=False,
         skip_coverage=False):
     
     print_marine_logo()
     
+    # Check to make sure the folder is empty, otherwise prompt for overwriting
+    # Getting the list of directories 
+    dir = os.listdir(output_folder) 
+      
+    # Checking if the list is empty or not 
+    if len(dir) > 0: 
+        pretty_print("WARNING {} is not empty".format(output_folder), style="^") 
+
     
     logging_folder = "{}/metadata".format(output_folder)
     make_folder(logging_folder)
@@ -339,10 +348,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
 
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
-        #all_edit_info_pd = pd.concat(results)
 
-        #if verbose:
-        #    all_edit_info_pd.to_csv('{}/all_edit_info.tsv'.format(output_folder), sep='\t')
 
         # Filtering and site-level information
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -355,12 +361,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                        names=['barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
        'dist_from_end', 'base_quality', 'mapping_quality', 'barcode_position',
        'coverage', 'source', 'position_barcode'], dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
-        
-        #all_edit_info_pd['contig'] = all_edit_info_pd['contig'].astype(str)
-
-        # Ensure that we are taking cleaning for only unique edits
-        # TODO fix thisssssss
-        #all_edit_info_pd['position_barcode'] = all_edit_info_pd['position'].astype(str) + '_' + all_edit_info_pd['barcode'].astype(str)
+    
         
         coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
         [
@@ -493,6 +494,22 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                 sep='\t')
     
             weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
+
+        if len(bedgraphs_list) > 0:
+            # Make plot of edit distributions
+            bedgraph_folder = '{}/bedgraphs'.format(output_folder)
+            make_folder(bedgraph_folder)
+            
+            pretty_print("Making bedgraphs for {} conversions...\n".format(bedgraphs_list))
+            for conversion in bedgraphs_list:
+                conversion_search = conversion[0] + '>' + conversion[1]
+                sites_for_conversion = final_site_level_information_df[final_site_level_information_df.conversion == conversion_search]
+                sites_for_conversion['edit_fraction'] = sites_for_conversion['count']/sites_for_conversion['coverage']
+                sites_for_conversion['start'] = sites_for_conversion['position'] - 1
+                sites_for_conversion_bedgraph_cols = sites_for_conversion[['contig', 'start', 'position', 'edit_fraction']]
+
+                sites_for_conversion_bedgraph_cols.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False,
+                                                                 header=False)
                 
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
@@ -550,7 +567,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--cores', type=int, default=multiprocessing.cpu_count())
     
-    parser.add_argument('--strandedness', type=int, 
+    parser.add_argument('--strandedness', type=int, choices=[0, 1, 2],
                         help='If flag is used, then assume read 2 maps to the sense strand (and read 1 to antisense), otherwise assume read 1 maps to the sense strand')
 
     parser.add_argument('--coverage', dest='coverage_only', action='store_true')
@@ -566,6 +583,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_read_quality', type=int, default=0, help='Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this filter')
     
     parser.add_argument('--sailor', dest='sailor', action='store_true')
+    parser.add_argument('--bedgraphs', type=str, default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
@@ -586,7 +604,8 @@ if __name__ == '__main__':
     coverage_only = args.coverage_only
     filtering_only = args.filtering_only
     annotation_only= args.annotation_only
-    
+
+    bedgraphs = args.bedgraphs
     sailor = args.sailor
     verbose = args.verbose
     keep_intermediate_files = args.keep_intermediate_files
@@ -601,6 +620,18 @@ if __name__ == '__main__':
     
     num_intervals_per_contig = args.num_intervals_per_contig
 
+    # Convert bedgraphs argument into list of conversions
+    if bedgraphs:
+        if barcode_tag in ['CB', 'IB']:
+            sys.stderr.write("Can only output bedgraphs for bulk sequencing runs of MARINE")
+            sys.exit(1)
+            
+        bedgraphs_list = bedgraphs.upper().replace('I', 'G').split(',')
+        for b in bedgraphs_list:
+            assert(b in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG'])
+    else:
+        bedgraphs_list = []
+        
     assert(strandedness in [0, 1, 2])
 
     if not os.path.exists(output_folder):
@@ -626,10 +657,11 @@ if __name__ == '__main__':
                   "\tFiltering only:\t{}".format(filtering_only),
                   "\tAnnotation only:\t{}".format(annotation_only),
                   "\tSailor outputs:\t{}".format(sailor),
+                  "\tBedgraphs:\t{}".format(bedgraphs_list),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum read quality:\t{}".format(min_read_quality),
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
-                  "\tmax_edits_per_read:\t{}".format(max_edits_per_read),
+                  "\tMaximum edits per read:\t{}".format(max_edits_per_read),
                   "\tContigs:\t{}".format(contigs),
                   "\tNumber of intervals:\t{}".format(num_intervals_per_contig),
                   "\tCores:\t{}".format(cores),
@@ -660,6 +692,7 @@ if __name__ == '__main__':
         filtering_only=filtering_only,
         annotation_only=annotation_only,
         sailor=sailor,
+        bedgraphs_list=bedgraphs_list,
         min_base_quality = min_base_quality, 
         min_read_quality = min_read_quality,
         min_dist_from_end = min_dist_from_end,
