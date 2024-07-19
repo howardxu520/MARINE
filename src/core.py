@@ -42,7 +42,8 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
     
     start_time = time.perf_counter()
 
-    counts_summary_dict = {}
+    overall_count_summary_dict = defaultdict(lambda:0)
+    counts_summary_dicts = []
     multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
@@ -56,6 +57,8 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
 
                 total_reads = _[3]
                 counts_summary_dict = _[4]
+                for k, v in counts_summary_dict.items():
+                    overall_count_summary_dict[k] += v
                 
                 total_time = time.perf_counter() - start_time
 
@@ -64,7 +67,10 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
                 total_seconds_for_reads[overall_total_reads] = total_time
 
     overall_time = time.perf_counter() - start_time 
-    return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, counts_summary_dict
+
+    overall_count_summary_df = pd.DataFrame.from_dict(overall_count_summary_dict).sum(axis=1)
+    
+    return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
 
 
 
@@ -172,6 +178,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
                 counts[contig][error_code] += 1
             else:
                 counts[contig]['edited'] += 1
+                counts[contig]['total_edits'] += len(list_of_rows)
                 write_rows_to_info_file(list_of_rows, f)
             
             # Store each read using its string representation only if there was not an mapq_low error code while processing the read
