@@ -54,7 +54,7 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
     pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
     
     overall_label_to_list_of_contents, results, overall_time, overall_total_reads, \
-    total_seconds_for_reads, counts_summary_dict = run_edit_identifier(
+    total_seconds_for_reads, counts_summary_df = run_edit_identifier(
         bam_filepath, 
         output_folder, 
         strandedness=strandedness,
@@ -75,7 +75,7 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
         [
             "Reads processed:\t{}".format(overall_total_reads), 
             "Time to process reads in min:\t{}".format(round(overall_time/60, 5)),
-            "Summary:\t{}".format(counts_summary_dict)
+            "Read Summary:\n{}".format(counts_summary_df)
         ],
         style="-"
     )
@@ -87,7 +87,7 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
     total_seconds_for_reads_df.index = range(len(total_seconds_for_reads_df))
     
     
-    return overall_label_to_list_of_contents, results, total_seconds_for_reads_df
+    return overall_label_to_list_of_contents, results, total_seconds_for_reads_df, overall_total_reads, counts_summary_df
 
 
 def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
@@ -297,7 +297,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("Identifying edits", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        overall_label_to_list_of_contents, results, total_seconds_for_reads_df = edit_finder(
+        overall_label_to_list_of_contents, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
             bam_filepath, 
             output_folder, 
             strandedness,
@@ -311,13 +311,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         )
         
         total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-        # REMOVE
-        #sys.exit()
+        
+        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+            f.write(f'total_reads_processed\t{total_reads_processed}\n') 
+            for k, v in counts_summary_df.items():
+                f.write(f'{k}\t{v}\n') 
 
         if barcode_tag:
             # Make a subfolder into which the split bams will be placed
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            pretty_print("Contigs processed:\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
+            pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
             pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -542,7 +545,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     current, peak = tracemalloc.get_traced_memory()
 
     with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-        f.write(f'peak_memory_mb: {peak/1e6}\n') 
+        f.write(f'peak_memory_mb\t{peak/1e6}\n') 
         f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
 
     print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
