@@ -17,7 +17,6 @@ from tqdm import tqdm
 import tracemalloc
 from matplotlib import pyplot as plt
 
-
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
@@ -89,7 +88,6 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
     
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df
 
-
 def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
                    verbose=False):
     split_bams_folder = '{}/split_bams'.format(output_folder)
@@ -117,6 +115,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
 import subprocess 
+
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
                        min_read_quality=0, bam_filepath=''):
 

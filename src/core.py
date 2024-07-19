@@ -11,6 +11,7 @@ from collections import defaultdict
 import multiprocessing
 from tqdm import tqdm
 from multiprocessing import get_context
+from memory_profiler import profile
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_information_wrapper,\
@@ -22,7 +23,6 @@ write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bam
 get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes
 
 import os, psutil
-
 
 def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality = 0):
     # Make subfolder in which to information about edits
@@ -228,6 +228,7 @@ def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_f
     
     
 import random
+
 
 def find_edits_and_split_bams_wrapper(parameters):
     try:

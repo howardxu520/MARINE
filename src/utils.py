@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
-
+from memory_profiler import profile
 
 suffixes = {
     'CB': [
@@ -312,6 +312,7 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
             
         return coverage_at_pos
 
+
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
                     verbose=False):
 
@@ -389,7 +390,6 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
     
     return coverage_df
-
 
 def get_coverage_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
@@ -486,8 +486,7 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
             
     bam_handle.close()
         
-        
-        
+           
 def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4, verbose=False):
     job_params = []
     
