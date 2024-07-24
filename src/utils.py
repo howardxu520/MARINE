@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
-from memory_profiler import profile
 
 suffixes = {
     'CB': [

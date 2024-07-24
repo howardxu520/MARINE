@@ -11,7 +11,6 @@ from collections import defaultdict
 import multiprocessing
 from tqdm import tqdm
 from multiprocessing import get_context
-from memory_profiler import profile
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_information_wrapper,\
