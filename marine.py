@@ -323,7 +323,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        
             total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
             total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
             pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
@@ -333,7 +332,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
-
+        
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
         
@@ -348,7 +347,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                               )
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
-
+        
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
 
 

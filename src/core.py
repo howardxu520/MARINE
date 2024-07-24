@@ -42,8 +42,9 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
     
     start_time = time.perf_counter()
 
+    all_counts_summary_dfs = []
     overall_count_summary_dict = defaultdict(lambda:0)
-    counts_summary_dicts = []
+    
     multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
@@ -56,9 +57,9 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
                     overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
 
                 total_reads = _[3]
-                counts_summary_dict = _[4]
-                for k, v in counts_summary_dict.items():
-                    overall_count_summary_dict[k] += v
+                counts_summary_df = _[4]
+                all_counts_summary_dfs.append(counts_summary_df)
+
                 
                 total_time = time.perf_counter() - start_time
 
@@ -68,7 +69,11 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
 
     overall_time = time.perf_counter() - start_time 
 
-    overall_count_summary_df = pd.DataFrame.from_dict(overall_count_summary_dict).sum(axis=1)
+    all_counts_summary_dfs_combined = pd.concat(all_counts_summary_dfs, axis=1)
+    #print(all_counts_summary_dfs_combined.index, all_counts_summary_dfs_combined.columns)
+    
+    overall_count_summary_df = pd.DataFrame.from_dict(all_counts_summary_dfs_combined).sum(axis=1)
+    #print(overall_count_summary_df)
     
     return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
 
