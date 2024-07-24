@@ -385,6 +385,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     # Filtering steps
     if not final_path_already_exists:
         print("Filtering..")
+
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      index_col=0,
                                                                      names=[
@@ -393,32 +394,9 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                          'coverage'],
                                                                      dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
         
-        print("Deduplicating....")
-        distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "mapping_quality",
-        ]
-        if not skip_coverage:
-            distinguishing_columns.append("coverage")
-            
-        all_edit_info_filtered_deduped = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
-            distinguishing_columns)[distinguishing_columns]
-        
         pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-        pretty_print("\tNumber of edits after deduplicating:\n\t{}".format(len(all_edit_info_filtered_deduped)))    
-        all_edit_info_filtered_deduped.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                         sep='\t', index=False)
-        
-        all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
-            
     
-        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
+        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_df)
 
         final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=skip_coverage)
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
