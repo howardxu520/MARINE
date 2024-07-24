@@ -117,7 +117,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
 import subprocess 
 
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
-                       min_read_quality=0, bam_filepath=''):
+                       min_read_quality=0, bam_filepath='', filters=None):
 
     # Single-cell or long read version:
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
@@ -133,10 +133,11 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             barcode_tag=barcode_tag,
                                                                             paired_end=paired_end,
                                                                             verbose=verbose,
-                                                                            processes=cores
+                                                                            processes=cores,
+                                                                            filters=filters
                                                                            )
-
-    concat_command = 'for f in {}/coverage/*.tsv; do cat $f; done > {}/all_edit_info.tsv'.format(output_folder, output_folder)
+    
+    concat_command = 'for f in {}/coverage/*_filtered.tsv; do cat $f; done > {}/final_edit_info.tsv'.format(output_folder, output_folder)
 
     command_bash = '{}/concat_command.sh'.format(output_folder)
     with open(command_bash, 'w') as f:
@@ -145,6 +146,7 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
     print("Concatenating results...")
     subprocess.run(['bash', command_bash])
     print("Done concatenating.")
+    
     
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
     total_seconds_for_contig_df.columns = ['seconds']
@@ -335,6 +337,12 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
+
+        filters = {
+            'dist_from_end': min_dist_from_end,
+            'base_quality': min_base_quality,
+            'max_edits_per_read': max_edits_per_read
+        }
         
         results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                barcode_tag=barcode_tag, 
@@ -343,54 +351,21 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                                cores=cores,
                                                                                number_of_expected_bams=number_of_expected_bams,
                                                                                min_read_quality=min_read_quality,
-                                                                               bam_filepath=bam_filepath
+                                                                               bam_filepath=bam_filepath,
+                                                                               filters=filters
                                                                               )
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
+        all_filter_stats = pd.DataFrame([r[1] for r in results]).sum(axis=0)
+        print(all_filter_stats)
         
+        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+            f.write(f'original_edits\t{float(all_filter_stats.loc["original"])}\n') 
+            f.write(f'filtered_edits\t{float(all_filter_stats.loc["filtered"])}\n')
+         
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
 
-
-        # Filtering and site-level information
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        pretty_print("Filtering and calculating site-level statistics", style="~")
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-        print("Loading edit information...")
-        all_edit_info_pd = pd.read_csv('{}/all_edit_info.tsv'.format(output_folder),
-                                       sep='\t', 
-                                       names=['barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
-       'dist_from_end', 'base_quality', 'mapping_quality', 'barcode_position',
-       'coverage', 'source', 'position_barcode'], dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
     
-        
-        coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
-        [
-            "position_barcode"
-        ]).coverage.max())
-
-        distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "dist_from_end",
-            "base_quality",
-            "mapping_quality"
-        ]
-        all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
-
-        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position'].astype(str)\
-+ '_' + all_edit_info_unique_position_df['barcode']
-
-        all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
-        
-        
-        all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
-
     if skip_coverage:
         # If we skip coverage steps, we have to just collate edit info results from the edit finding steps into one giant 
         # final_edit_info.tsv file (where coverage is None)
@@ -410,18 +385,13 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     # Filtering steps
     if not final_path_already_exists:
         print("Filtering..")
-        if filtering_only:
-            all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
-
-        pretty_print("Filtering edited sites", style='~')
-        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
-
-        #all_edit_info_unique_position_with_coverage_df['min_base_quality'] = all_edit_info_unique_position_with_coverage_df['min_base_quality'].astype(int)
-        
-        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-            (all_edit_info_unique_position_with_coverage_df["base_quality"] >= min_base_quality) & 
-            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
-        
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     index_col=0,
+                                                                     names=[
+                                                                         'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
+                                                                         'strand','dist_from_end', 'base_quality', 'mapping_quality',
+                                                                         'coverage'],
+                                                                     dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
         
         print("Deduplicating....")
         distinguishing_columns = [
@@ -437,22 +407,14 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         if not skip_coverage:
             distinguishing_columns.append("coverage")
             
-        all_edit_info_filtered_deduped = all_edit_info_filtered.drop_duplicates(
+        all_edit_info_filtered_deduped = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
             distinguishing_columns)[distinguishing_columns]
         
-        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
-        pretty_print("\tNumber of edits after deduplicating:\n\t{}".format(len(all_edit_info_filtered_deduped)))
-
-        if max_edits_per_read:
-            pretty_print("\t\tFiltering out reads with more than {} edits...".format(max_edits_per_read))
-            read_edits = all_edit_info_filtered_deduped.groupby('read_id').count().sort_values('barcode')
-            all_edit_info_filtered_deduped = all_edit_info_filtered_deduped[all_edit_info_filtered_deduped.read_id.isin(read_edits[read_edits['barcode'] <= max_edits_per_read].index)]
-        
+        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
+        pretty_print("\tNumber of edits after deduplicating:\n\t{}".format(len(all_edit_info_filtered_deduped)))    
         all_edit_info_filtered_deduped.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
                                          sep='\t', index=False)
         
-            
         all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
             
     
@@ -543,6 +505,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     current, peak = tracemalloc.get_traced_memory()
 
     with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'sites\t{len(final_site_level_information_df)}\n') 
         f.write(f'peak_memory_mb\t{peak/1e6}\n') 
         f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
 

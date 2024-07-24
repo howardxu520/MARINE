@@ -298,17 +298,20 @@ def find_edits_and_split_bams_wrapper(parameters):
     
     
     
-def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, 
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, 
+                            output_folder, 
                             barcode_tag='CB',
                             paired_end=False, 
                             verbose=False,
-                            processes=16
+                            processes=16,
+                            filters=None,
                            ):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
+        filters=filters,
         verbose=verbose
     )
     
@@ -337,12 +340,12 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
 
 
 def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder,
-                                                    barcode_tag='CB', paired_end=False, verbose=False):
+                                                    barcode_tag='CB', paired_end=False, filters=None, verbose=False):
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
                     
-        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose])  
+        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, filters, verbose])  
         
     return job_params
 
