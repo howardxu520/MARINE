@@ -430,20 +430,6 @@ def filter_output_df(output_df, filters, output_filename):
         read_edits = all_edit_info_unique_position_with_coverage_df.groupby('read_id').count().sort_values('barcode')
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_with_coverage_df[all_edit_info_unique_position_with_coverage_df.read_id.isin(read_edits[read_edits['barcode'] <= max_edits_per_read].index)]
 
-    distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "mapping_quality",
-    ]
-
-    all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
-            distinguishing_columns)[distinguishing_columns]
-
     filter_stats['filtered'] = len(all_edit_info_unique_position_with_coverage_df)
 
     
