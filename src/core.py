@@ -49,6 +49,10 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
+                # values returned within array _ are:
+                # ~~~~  contig, label, barcode_to_concatted_reads_pl, total_reads, counts_df, time_df, total_time
+                # So the line overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
+                # is equivalent to overall_label_to_list_of_contents[contig][label] = barcode_to_concatted_reads_pl
                 pbar.update()
 
                 if barcode_tag: 
@@ -59,7 +63,6 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
                 counts_summary_df = _[4]
                 all_counts_summary_dfs.append(counts_summary_df)
 
-                
                 total_time = time.perf_counter() - start_time
 
                 overall_total_reads += total_reads
