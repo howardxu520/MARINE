@@ -394,6 +394,11 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 def filter_output_df(output_df, filters, output_filename):
     filter_stats = {}
     filter_stats['original'] = len(output_df)
+    if output_df.empty:
+        filter_stats['filtered'] = len(output_df)
+        output_df['coverage'] = []
+        output_df.to_csv(output_filename, sep='\t', header=False)
+        return filter_stats
     
     filtered_output_df = output_df[
             (output_df.dist_from_end >= filters.get('dist_from_end')) & 
@@ -430,6 +435,22 @@ def filter_output_df(output_df, filters, output_filename):
         read_edits = all_edit_info_unique_position_with_coverage_df.groupby('read_id').count().sort_values('barcode')
         all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_with_coverage_df[all_edit_info_unique_position_with_coverage_df.read_id.isin(read_edits[read_edits['barcode'] <= max_edits_per_read].index)]
 
+
+    distinguishing_columns = [
+            "barcode",
+            "contig",
+            "position",
+            "ref",
+            "alt",
+            "read_id",
+            "strand",
+            "mapping_quality",
+            "coverage"
+        ]
+
+    all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
+            distinguishing_columns)[distinguishing_columns]
+    
     filter_stats['filtered'] = len(all_edit_info_unique_position_with_coverage_df)
 
     
@@ -466,12 +487,11 @@ def get_coverage_wrapper(parameters):
         coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
                                       paired_end=paired_end, verbose=verbose)
     
-        # Combine edit information with coverage information
+        # Combine edit i)nformation with coverage information
         edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
-    
         edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
         edit_info_and_coverage_joined.to_csv(output_filename, sep='\t', header=False)
-    
+
     filter_stats = filter_output_df(edit_info_and_coverage_joined, filters, filtered_output_filename)
     assert(os.path.exists(output_filename))
     assert(os.path.exists(filtered_output_filename))

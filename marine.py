@@ -390,7 +390,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                      index_col=0,
                                                                      names=[
                                                                          'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
-                                                                         'strand','dist_from_end', 'base_quality', 'mapping_quality',
+                                                                         'strand', 'mapping_quality',
                                                                          'coverage'],
                                                                      dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
         

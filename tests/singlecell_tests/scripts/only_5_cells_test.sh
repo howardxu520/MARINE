@@ -16,5 +16,4 @@ $MARINE/tests/singlecell_tests/only_5_cells_test \
 --barcode_tag "CB" \
 --strandedness 2 \
 --contigs "9" \
---verbose \
 --num_intervals_per_contig 16
