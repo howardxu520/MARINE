@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+from collections import defaultdict
 from glob import glob
 from multiprocessing import Pool
 import multiprocessing
@@ -16,6 +17,7 @@ import time
 from tqdm import tqdm
 import tracemalloc
 from matplotlib import pyplot as plt
+import math
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
@@ -298,38 +300,77 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("Identifying edits", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        overall_label_to_list_of_contents, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
-            bam_filepath, 
-            output_folder, 
-            strandedness,
-            barcode_tag,
-            barcode_whitelist,
-            contigs,
-            num_intervals_per_contig,
-            verbose,
-            cores=cores,
-            min_read_quality=min_read_quality
-        )
-        
-        total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-        
-        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-            f.write(f'total_reads_processed\t{total_reads_processed}\n') 
-            for k, v in counts_summary_df.items():
-                f.write(f'{k}\t{v}\n') 
+        if len(contigs) == 0:
+            broken_up_contigs = [[]]
+        else:
+            broken_up_contigs = []
 
-        if barcode_tag:
-            # Make a subfolder into which the split bams will be placed
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
-            pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-            total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
-            total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
-            pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+            if barcode_whitelist_file:
+                # For single cell sequencing we will only process this many contigs at a time
+                num_per_sublist = 6
+            else:
+                # For bulk sequencing we will just process all contigs 
+                num_per_sublist = len(contigs)
+    
+            i_options = range((math.ceil(len(contigs)/num_per_sublist)) + 1)
+            #print('i_options', i_options)
+            for i in i_options:
+                contig_sublist = []
+                j_options = range(i*num_per_sublist, (i*num_per_sublist) + num_per_sublist)
+                #print('j_options', j_options)
+                for j in j_options:
+                    if j < len(contigs):
+                        contig_sublist.append(contigs[j])
+    
+                if len(contig_sublist) > 0:
+                    broken_up_contigs.append(contig_sublist)
+        #print('broken_up_contigs', broken_up_contigs)
 
         
+        overall_counts_summary_df = defaultdict(lambda:0)
+        overall_total_reads_processed = 0
+        for subcontig_list in broken_up_contigs:
+                
+            overall_label_to_list_of_contents, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
+                bam_filepath, 
+                output_folder, 
+                strandedness,
+                barcode_tag,
+                barcode_whitelist,
+                subcontig_list,
+                num_intervals_per_contig,
+                verbose,
+                cores=cores,
+                min_read_quality=min_read_quality
+            )
+
+            for k,v in counts_summary_df.items():
+                overall_counts_summary_df[k] += v
+                
+            overall_total_reads_processed += total_reads_processed
+            
+            #total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
+            
+            if barcode_tag:
+                # Make a subfolder into which the split bams will be placed
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
+                pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+                total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
+                #total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
+                pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+
+            print("Deleting overall_label_to_list_of_contents...")
+            del overall_label_to_list_of_contents
+
+    
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
+        for k, v in overall_counts_summary_df.items():
+            f.write(f'{k}\t{v}\n') 
+
     if not filtering_only and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

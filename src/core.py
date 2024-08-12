@@ -44,7 +44,7 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
     all_counts_summary_dfs = []
     overall_count_summary_dict = defaultdict(lambda:0)
     
-    multiprocessing.set_start_method('spawn')
+    #multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
