@@ -252,9 +252,27 @@ def collate_edit_info_shards(output_folder):
     print("\tShape of collated edit info df: {}".format(collated_df.shape))
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
+
+def get_broken_up_contigs(contigs, num_per_sublist):
+    broken_up_contigs = []
+                
+    i_options = range((math.ceil(len(contigs)/num_per_sublist)) + 1)
+    
+    for i in i_options:
+        contig_sublist = []
+        j_options = range(i*num_per_sublist, (i*num_per_sublist) + num_per_sublist)
+        
+        for j in j_options:
+            if j < len(contigs):
+                contig_sublist.append(contigs[j])
+
+        if len(contig_sublist) > 0:
+            broken_up_contigs.append(contig_sublist)
+    return broken_up_contigs
     
 def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
         keep_intermediate_files=False,
+        num_per_sublist=6,
         skip_coverage=False):
     
     print_marine_logo()
@@ -301,31 +319,18 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
         if len(contigs) == 0:
+            # Take care of the case where no contigs are specified, so that all contigs available are processed
             broken_up_contigs = [[]]
         else:
-            broken_up_contigs = []
-
             if barcode_whitelist_file:
                 # For single cell sequencing we will only process this many contigs at a time
-                num_per_sublist = 6
+                broken_up_contigs = get_broken_up_contigs(contigs, num_per_sublist)
+                    
             else:
                 # For bulk sequencing we will just process all contigs 
-                num_per_sublist = len(contigs)
-    
-            i_options = range((math.ceil(len(contigs)/num_per_sublist)) + 1)
-            #print('i_options', i_options)
-            for i in i_options:
-                contig_sublist = []
-                j_options = range(i*num_per_sublist, (i*num_per_sublist) + num_per_sublist)
-                #print('j_options', j_options)
-                for j in j_options:
-                    if j < len(contigs):
-                        contig_sublist.append(contigs[j])
-    
-                if len(contig_sublist) > 0:
-                    broken_up_contigs.append(contig_sublist)
-        #print('broken_up_contigs', broken_up_contigs)
+                broken_up_contigs = [contigs]
 
+        print('Contig groups to be processed:', broken_up_contigs)
         
         overall_counts_summary_df = defaultdict(lambda:0)
         overall_total_reads_processed = 0
@@ -569,6 +574,7 @@ if __name__ == '__main__':
     parser.add_argument('--bedgraphs', type=str, default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
+    parser.add_argument('--num_per_sublist', dest='num_per_sublist', type=int, default=6)
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
@@ -603,6 +609,8 @@ if __name__ == '__main__':
     
     num_intervals_per_contig = args.num_intervals_per_contig
 
+    num_per_sublist = args.num_per_sublist
+    
     # Convert bedgraphs argument into list of conversions
     if bedgraphs:
         if barcode_tag in ['CB', 'IB']:
@@ -650,7 +658,8 @@ if __name__ == '__main__':
                   "\tCores:\t{}".format(cores),
                   "\tVerbose:\t{}".format(verbose),
                   "\tKeep intermediate files:\t{}".format(keep_intermediate_files),
-                  "\tSkip coverage?:\t{}".format(skip_coverage)
+                  "\tSkip coverage?:\t{}".format(skip_coverage),
+                  "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist)
                  ])
 
     # Whether to only run for certain contigs 
@@ -684,7 +693,8 @@ if __name__ == '__main__':
         verbose = verbose,
         number_of_expected_bams=num_intervals_per_contig,
         skip_coverage=skip_coverage,
-        keep_intermediate_files=keep_intermediate_files
+        keep_intermediate_files=keep_intermediate_files,
+        num_per_sublist=num_per_sublist
        )
     
     
