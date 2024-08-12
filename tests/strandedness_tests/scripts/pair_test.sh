@@ -17,5 +17,5 @@ $MARINE/tests/strandedness_tests/pair_test \
 --strandedness 2 \
 --contigs 18 \
 --sailor \
---verbose \
+--keep_intermediate_files \
 --num_intervals_per_contig 1

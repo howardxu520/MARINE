@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+from collections import defaultdict
 from glob import glob
 from multiprocessing import Pool
 import multiprocessing
@@ -16,7 +17,7 @@ import time
 from tqdm import tqdm
 import tracemalloc
 from matplotlib import pyplot as plt
-
+import math
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
@@ -89,7 +90,6 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
     
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df, overall_total_reads, counts_summary_df
 
-
 def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
                    verbose=False):
     split_bams_folder = '{}/split_bams'.format(output_folder)
@@ -117,8 +117,9 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     
     
 import subprocess 
+
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
-                       min_read_quality=0, bam_filepath=''):
+                       min_read_quality=0, bam_filepath='', filters=None):
 
     # Single-cell or long read version:
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
@@ -134,10 +135,11 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             barcode_tag=barcode_tag,
                                                                             paired_end=paired_end,
                                                                             verbose=verbose,
-                                                                            processes=cores
+                                                                            processes=cores,
+                                                                            filters=filters
                                                                            )
-
-    concat_command = 'for f in {}/coverage/*.tsv; do cat $f; done > {}/all_edit_info.tsv'.format(output_folder, output_folder)
+    
+    concat_command = 'for f in {}/coverage/*_filtered.tsv; do cat $f; done > {}/final_edit_info.tsv'.format(output_folder, output_folder)
 
     command_bash = '{}/concat_command.sh'.format(output_folder)
     with open(command_bash, 'w') as f:
@@ -146,6 +148,7 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
     print("Concatenating results...")
     subprocess.run(['bash', command_bash])
     print("Done concatenating.")
+    
     
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
     total_seconds_for_contig_df.columns = ['seconds']
@@ -249,9 +252,27 @@ def collate_edit_info_shards(output_folder):
     print("\tShape of collated edit info df: {}".format(collated_df.shape))
     print("\tColumns of collated edit info df: {}".format(collated_df.columns))
     return collated_df
+
+def get_broken_up_contigs(contigs, num_per_sublist):
+    broken_up_contigs = []
+                
+    i_options = range((math.ceil(len(contigs)/num_per_sublist)) + 1)
+    
+    for i in i_options:
+        contig_sublist = []
+        j_options = range(i*num_per_sublist, (i*num_per_sublist) + num_per_sublist)
+        
+        for j in j_options:
+            if j < len(contigs):
+                contig_sublist.append(contigs[j])
+
+        if len(contig_sublist) > 0:
+            broken_up_contigs.append(contig_sublist)
+    return broken_up_contigs
     
 def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
         keep_intermediate_files=False,
+        num_per_sublist=6,
         skip_coverage=False):
     
     print_marine_logo()
@@ -297,46 +318,77 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         pretty_print("Identifying edits", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        overall_label_to_list_of_contents, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
-            bam_filepath, 
-            output_folder, 
-            strandedness,
-            barcode_tag,
-            barcode_whitelist,
-            contigs,
-            num_intervals_per_contig,
-            verbose,
-            cores=cores,
-            min_read_quality=min_read_quality
-        )
-        
-        total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-        
-        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-            f.write(f'total_reads_processed\t{total_reads_processed}\n') 
-            for k, v in counts_summary_df.items():
-                f.write(f'{k}\t{v}\n') 
+        if len(contigs) == 0:
+            # Take care of the case where no contigs are specified, so that all contigs available are processed
+            broken_up_contigs = [[]]
+        else:
+            if barcode_whitelist_file:
+                # For single cell sequencing we will only process this many contigs at a time
+                broken_up_contigs = get_broken_up_contigs(contigs, num_per_sublist)
+                    
+            else:
+                # For bulk sequencing we will just process all contigs 
+                broken_up_contigs = [contigs]
 
-        if barcode_tag:
-            # Make a subfolder into which the split bams will be placed
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
-            pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+        print('Contig groups to be processed:', broken_up_contigs)
         
-            total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
-            total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
-            pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+        overall_counts_summary_df = defaultdict(lambda:0)
+        overall_total_reads_processed = 0
+        for subcontig_list in broken_up_contigs:
+                
+            overall_label_to_list_of_contents, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
+                bam_filepath, 
+                output_folder, 
+                strandedness,
+                barcode_tag,
+                barcode_whitelist,
+                subcontig_list,
+                num_intervals_per_contig,
+                verbose,
+                cores=cores,
+                min_read_quality=min_read_quality
+            )
 
-        
+            for k,v in counts_summary_df.items():
+                overall_counts_summary_df[k] += v
+                
+            overall_total_reads_processed += total_reads_processed
+            
+            #total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
+            
+            if barcode_tag:
+                # Make a subfolder into which the split bams will be placed
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
+                pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+                total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
+                #total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
+                pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
+
+            print("Deleting overall_label_to_list_of_contents...")
+            del overall_label_to_list_of_contents
+
+    
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
+        for k, v in overall_counts_summary_df.items():
+            f.write(f'{k}\t{v}\n') 
+
     if not filtering_only and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
-
+        
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
+
+        filters = {
+            'dist_from_end': min_dist_from_end,
+            'base_quality': min_base_quality,
+            'max_edits_per_read': max_edits_per_read
+        }
         
         results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                barcode_tag=barcode_tag, 
@@ -345,54 +397,21 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                                cores=cores,
                                                                                number_of_expected_bams=number_of_expected_bams,
                                                                                min_read_quality=min_read_quality,
-                                                                               bam_filepath=bam_filepath
+                                                                               bam_filepath=bam_filepath,
+                                                                               filters=filters
                                                                               )
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
 
-
+        all_filter_stats = pd.DataFrame([r[1] for r in results]).sum(axis=0)
+        print(all_filter_stats)
+        
+        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+            f.write(f'original_edits\t{float(all_filter_stats.loc["original"])}\n') 
+            f.write(f'filtered_edits\t{float(all_filter_stats.loc["filtered"])}\n')
+         
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
 
-
-        # Filtering and site-level information
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        pretty_print("Filtering and calculating site-level statistics", style="~")
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-        print("Loading edit information...")
-        all_edit_info_pd = pd.read_csv('{}/all_edit_info.tsv'.format(output_folder),
-                                       sep='\t', 
-                                       names=['barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
-       'dist_from_end', 'base_quality', 'mapping_quality', 'barcode_position',
-       'coverage', 'source', 'position_barcode'], dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
     
-        
-        coverage_per_unique_position_df = pd.DataFrame(all_edit_info_pd.groupby(
-        [
-            "position_barcode"
-        ]).coverage.max())
-
-        distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "dist_from_end",
-            "base_quality",
-            "mapping_quality"
-        ]
-        all_edit_info_unique_position_df = all_edit_info_pd.drop_duplicates(distinguishing_columns)[distinguishing_columns]
-
-        all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position'].astype(str)\
-+ '_' + all_edit_info_unique_position_df['barcode']
-
-        all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
-        
-        
-        all_edit_info_unique_position_with_coverage_df.to_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t')
-
     if skip_coverage:
         # If we skip coverage steps, we have to just collate edit info results from the edit finding steps into one giant 
         # final_edit_info.tsv file (where coverage is None)
@@ -412,53 +431,18 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     # Filtering steps
     if not final_path_already_exists:
         print("Filtering..")
-        if filtering_only:
-            all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
 
-        pretty_print("Filtering edited sites", style='~')
-        pretty_print("Minimum distance from end = {}, Minimum base-calling quality = {}".format(min_dist_from_end, min_base_quality))
-
-        #all_edit_info_unique_position_with_coverage_df['min_base_quality'] = all_edit_info_unique_position_with_coverage_df['min_base_quality'].astype(int)
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     index_col=0,
+                                                                     names=[
+                                                                         'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
+                                                                         'strand', 'mapping_quality',
+                                                                         'coverage'],
+                                                                     dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
         
-        all_edit_info_filtered = all_edit_info_unique_position_with_coverage_df[
-            (all_edit_info_unique_position_with_coverage_df["base_quality"] >= min_base_quality) & 
-            (all_edit_info_unique_position_with_coverage_df["dist_from_end"] >= min_dist_from_end)]
-        
-        
-        print("Deduplicating....")
-        distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "mapping_quality",
-        ]
-        if not skip_coverage:
-            distinguishing_columns.append("coverage")
-            
-        all_edit_info_filtered_deduped = all_edit_info_filtered.drop_duplicates(
-            distinguishing_columns)[distinguishing_columns]
-        
-        pretty_print("\tNumber of edits before filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
-        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_filtered)))
-        pretty_print("\tNumber of edits after deduplicating:\n\t{}".format(len(all_edit_info_filtered_deduped)))
-
-        if max_edits_per_read:
-            pretty_print("\t\tFiltering out reads with more than {} edits...".format(max_edits_per_read))
-            read_edits = all_edit_info_filtered_deduped.groupby('read_id').count().sort_values('barcode')
-            all_edit_info_filtered_deduped = all_edit_info_filtered_deduped[all_edit_info_filtered_deduped.read_id.isin(read_edits[read_edits['barcode'] <= max_edits_per_read].index)]
-        
-        all_edit_info_filtered_deduped.to_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), 
-                                         sep='\t', index=False)
-        
-            
-        all_edit_info_unique_position_with_coverage_deduped_df = pd.read_csv('{}/final_filtered_edit_info.tsv'.format(output_folder), sep='\t', dtype={"contig": str})
-            
+        pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
     
-        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_deduped_df)
+        all_edit_info_filtered_pl = pl.from_pandas(all_edit_info_unique_position_with_coverage_df)
 
         final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=skip_coverage)
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
@@ -545,6 +529,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     current, peak = tracemalloc.get_traced_memory()
 
     with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'sites\t{len(final_site_level_information_df)}\n') 
         f.write(f'peak_memory_mb\t{peak/1e6}\n') 
         f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
 
@@ -589,6 +574,7 @@ if __name__ == '__main__':
     parser.add_argument('--bedgraphs', type=str, default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
+    parser.add_argument('--num_per_sublist', dest='num_per_sublist', type=int, default=6)
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
@@ -623,6 +609,8 @@ if __name__ == '__main__':
     
     num_intervals_per_contig = args.num_intervals_per_contig
 
+    num_per_sublist = args.num_per_sublist
+    
     # Convert bedgraphs argument into list of conversions
     if bedgraphs:
         if barcode_tag in ['CB', 'IB']:
@@ -670,7 +658,8 @@ if __name__ == '__main__':
                   "\tCores:\t{}".format(cores),
                   "\tVerbose:\t{}".format(verbose),
                   "\tKeep intermediate files:\t{}".format(keep_intermediate_files),
-                  "\tSkip coverage?:\t{}".format(skip_coverage)
+                  "\tSkip coverage?:\t{}".format(skip_coverage),
+                  "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist)
                  ])
 
     # Whether to only run for certain contigs 
@@ -704,7 +693,8 @@ if __name__ == '__main__':
         verbose = verbose,
         number_of_expected_bams=num_intervals_per_contig,
         skip_coverage=skip_coverage,
-        keep_intermediate_files=keep_intermediate_files
+        keep_intermediate_files=keep_intermediate_files,
+        num_per_sublist=num_per_sublist
        )
     
     

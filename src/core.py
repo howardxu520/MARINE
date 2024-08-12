@@ -23,7 +23,6 @@ get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes
 
 import os, psutil
 
-
 def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality = 0):
     # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
@@ -42,13 +41,18 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
     
     start_time = time.perf_counter()
 
+    all_counts_summary_dfs = []
     overall_count_summary_dict = defaultdict(lambda:0)
-    counts_summary_dicts = []
-    multiprocessing.set_start_method('spawn')
+    
+    #multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
             for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
+                # values returned within array _ are:
+                # ~~~~  contig, label, barcode_to_concatted_reads_pl, total_reads, counts_df, time_df, total_time
+                # So the line overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
+                # is equivalent to overall_label_to_list_of_contents[contig][label] = barcode_to_concatted_reads_pl
                 pbar.update()
 
                 if barcode_tag: 
@@ -56,10 +60,9 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
                     overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
 
                 total_reads = _[3]
-                counts_summary_dict = _[4]
-                for k, v in counts_summary_dict.items():
-                    overall_count_summary_dict[k] += v
-                
+                counts_summary_df = _[4]
+                all_counts_summary_dfs.append(counts_summary_df)
+
                 total_time = time.perf_counter() - start_time
 
                 overall_total_reads += total_reads
@@ -68,7 +71,11 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
 
     overall_time = time.perf_counter() - start_time 
 
-    overall_count_summary_df = pd.DataFrame.from_dict(overall_count_summary_dict).sum(axis=1)
+    all_counts_summary_dfs_combined = pd.concat(all_counts_summary_dfs, axis=1)
+    #print(all_counts_summary_dfs_combined.index, all_counts_summary_dfs_combined.columns)
+    
+    overall_count_summary_df = pd.DataFrame.from_dict(all_counts_summary_dfs_combined).sum(axis=1)
+    #print(overall_count_summary_df)
     
     return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
 
@@ -236,6 +243,7 @@ def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_f
     
 import random
 
+
 def find_edits_and_split_bams_wrapper(parameters):
     try:
         start_time = time.perf_counter()
@@ -292,17 +300,20 @@ def find_edits_and_split_bams_wrapper(parameters):
     
     
     
-def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder, 
+def run_coverage_calculator(edit_info_grouped_per_contig_combined, 
+                            output_folder, 
                             barcode_tag='CB',
                             paired_end=False, 
                             verbose=False,
-                            processes=16
+                            processes=16,
+                            filters=None,
                            ):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
+        filters=filters,
         verbose=verbose
     )
     
@@ -331,12 +342,12 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder
 
 
 def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder,
-                                                    barcode_tag='CB', paired_end=False, verbose=False):
+                                                    barcode_tag='CB', paired_end=False, filters=None, verbose=False):
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
                     
-        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose])  
+        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, filters, verbose])  
         
     return job_params
 
