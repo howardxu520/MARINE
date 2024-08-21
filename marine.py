@@ -572,7 +572,7 @@ if __name__ == '__main__':
     parser.add_argument('--contigs', type=str, default='all')
     parser.add_argument('--min_read_quality', type=int, default=0, help='Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this filter')
     
-    parser.add_argument('--sailor', type=str, default='CT', dest='sailor')
+    parser.add_argument('--sailor', type=str, default=None, dest='sailor')
     
     parser.add_argument('--bedgraphs', type=str, default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
