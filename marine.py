@@ -270,7 +270,7 @@ def get_broken_up_contigs(contigs, num_per_sublist):
             broken_up_contigs.append(contig_sublist)
     return broken_up_contigs
     
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor=False, min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor_list=[], min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
         keep_intermediate_files=False,
         num_per_sublist=6,
         skip_coverage=False):
@@ -460,7 +460,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         final_path_already_exists = True
 
         
-        if sailor:
+        if len(sailor_list) > 0:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
 
             # Output SAILOR-formatted file for use in FLARE downstream
@@ -468,19 +468,21 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
             # 1       629275  629276  0.966040688     2,30    +
             # 1       629309  629310  2.8306e-05      1,1043  +
     
-            conversion = 'C>T'
-            sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion, skip_coverage=skip_coverage)
-            sailor_sites = sailor_sites.drop_duplicates()
-
-            print("{} final deduplicated SAILOR-formatted sites".format(len(sailor_sites)))
-            sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
-                output_folder, 
-                conversion.replace(">", "-")), 
-                header=False,
-                index=False,       
-                sep='\t')
+            for conversion in sailor_list:
+                conversion_search = conversion[0] + '>' + conversion[1]
+                
+                print("Generating SAILOR-style bed outputs for conversion {}...".format(conversion))
+                
+                sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion_search, skip_coverage=skip_coverage)
+                sailor_sites = sailor_sites.drop_duplicates()
     
-            weird_sites.to_csv('{}/problematic_sites.tsv'.format(output_folder), sep='\t')
+                print("{} final deduplicated {} SAILOR-formatted sites".format(len(sailor_sites), conversion_search))
+                sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+                    output_folder, 
+                    conversion_search.replace(">", "-")), 
+                    header=False,
+                    index=False,       
+                    sep='\t')
 
         if len(bedgraphs_list) > 0:
             # Make plot of edit distributions
@@ -570,7 +572,8 @@ if __name__ == '__main__':
     parser.add_argument('--contigs', type=str, default='all')
     parser.add_argument('--min_read_quality', type=int, default=0, help='Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this filter')
     
-    parser.add_argument('--sailor', dest='sailor', action='store_true')
+    parser.add_argument('--sailor', type=str, nargs='?', const='CT', default=None, dest='sailor')
+    
     parser.add_argument('--bedgraphs', type=str, default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
@@ -622,6 +625,17 @@ if __name__ == '__main__':
             assert(b in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG'])
     else:
         bedgraphs_list = []
+
+    if sailor:
+        if barcode_tag in ['CB', 'IB']:
+            sys.stderr.write("Can only output bedgraphs for bulk sequencing runs of MARINE")
+            sys.exit(1)
+            
+        sailor_list = sailor.upper().replace('I', 'G').split(',')
+        for s in sailor_list:
+            assert(s in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG'])
+    else:
+        sailor_list = []
         
     assert(strandedness in [0, 1, 2])
 
@@ -647,7 +661,7 @@ if __name__ == '__main__':
                   "\tCoverage only:\t{}".format(coverage_only),
                   "\tFiltering only:\t{}".format(filtering_only),
                   "\tAnnotation only:\t{}".format(annotation_only),
-                  "\tSailor outputs:\t{}".format(sailor),
+                  "\tSailor outputs:\t{}".format(sailor_list),
                   "\tBedgraphs:\t{}".format(bedgraphs_list),
                   "\tMinimum base quality:\t{}".format(min_base_quality),
                   "\tMinimum read quality:\t{}".format(min_read_quality),
@@ -683,7 +697,7 @@ if __name__ == '__main__':
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
-        sailor=sailor,
+        sailor_list=sailor_list,
         bedgraphs_list=bedgraphs_list,
         min_base_quality = min_base_quality, 
         min_read_quality = min_read_quality,
