@@ -56,6 +56,23 @@ test_name_to_expectations = {
             "feature_strand": "-"
         }]
     },
+    
+    "F1R2_pair_test-single_end_mode_sailor": {
+        "folder": "strandedness_tests",
+        "expectations": [{
+            "contig": "chr17",
+            "position": 43044352,
+            "count": 1,
+            "coverage": 2,
+            "conversion": "G>A",
+            "num_rows": 1,
+            "conversion": "G>A",
+            "strand_conversion": "C>T",
+            "strand": "-",
+            "feature_name": "BRCA1",
+            "feature_strand": "-"
+        }]
+    },
 
     "F1R2_pair_test-single_end_mode": {
         "folder": "strandedness_tests",
