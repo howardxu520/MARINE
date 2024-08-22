@@ -130,11 +130,11 @@ This is derived from an APOBEC1-fusion experiment, so we expect an enrichment fo
 python marine.py \
 --bam_filepath examples/data/bulk_CT.md.subset.bam \
 --output_folder examples/bulk_subset_CT \
---reverse_stranded \
 --cores 16 \
 --annotation_bedfile_path /annotations/hg38_gencode.v35.annotation.genes.bed \
 --strandedness 2
---contigs "chr1"
+--contigs "1"
+--bedgraphs "CT"
 ```
 
 This is derived from an APOBEC1-fusion experiment, so we should also expect to see an enrichment for C>T (C>U) edits:
