@@ -1,5 +1,4 @@
-# MARINE: 
-Multi-core Algorithm for Rapid Identification of Nucleotide Edits
+![MARINE logo](images/MARINE_logo.png)
 ------------------------------------------------------
 MARINE relies on the MD tag being present in your .bam file. Some tools like STAR provide the option to add the MD tag during alignment, but otherwise you may have to add it after alignment. To add the MD tag and then index the processed bam, use the following samtools command templates:
 
