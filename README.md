@@ -91,6 +91,8 @@ Expected example outputs are contained in the subfolders in the examples folder.
 ## Single-cell example MARINE command
 MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs. Strandedness for 10X inputs should be 2.
 
+Note: MARINE by default will filter out UMI duplicates based on the xf:i:25 tag at explained here: https://www.10xgenomics.com/analysis-guides/tutorial-navigating-10x-barcoded-bam-files
+
 ![Finding edits in single cells](images/only_5_cells_test_example.png)
 
 ```
