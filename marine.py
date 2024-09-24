@@ -574,7 +574,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--sailor', type=str, nargs='?', const='CT', default=None, dest='sailor')
     
-    parser.add_argument('--bedgraphs', type=str, default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
+    parser.add_argument('--bedgraphs', type=str, nargs='?', const='CT', default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
     parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
     parser.add_argument('--num_per_sublist', dest='num_per_sublist', type=int, default=6)
@@ -615,7 +615,7 @@ if __name__ == '__main__':
     num_per_sublist = args.num_per_sublist
     
     # Convert bedgraphs argument into list of conversions
-    if bedgraphs:
+    if not bedgraphs is None:
         if barcode_tag in ['CB', 'IB']:
             sys.stderr.write("Can only output bedgraphs for bulk sequencing runs of MARINE")
             sys.exit(1)
@@ -626,9 +626,9 @@ if __name__ == '__main__':
     else:
         bedgraphs_list = []
 
-    if sailor:
+    if not sailor is None:
         if barcode_tag in ['CB', 'IB']:
-            sys.stderr.write("Can only output bedgraphs for bulk sequencing runs of MARINE")
+            sys.stderr.write("Can only output sailor for bulk sequencing runs of MARINE")
             sys.exit(1)
             
         sailor_list = sailor.upper().replace('I', 'G').split(',')
