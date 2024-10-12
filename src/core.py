@@ -43,7 +43,6 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
 
     all_counts_summary_dfs = []
     overall_count_summary_dict = defaultdict(lambda:0)
-    count = 0
     #multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
@@ -415,8 +414,6 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
 
 def add_site_id(all_edit_info):
     if len(all_edit_info) == 0:
-        print("DataFrame is empty. Returning an empty DataFrame.")
-        all_edit_info = all_edit_info.with_columns(pl.Series(name='site_id', values=[]))
         return all_edit_info
 
     return all_edit_info.with_columns(
