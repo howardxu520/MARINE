@@ -36,6 +36,50 @@ gather_edit_information_across_subcontigs, run_coverage_calculator, generate_sit
 
 from annotate import annotate_sites, get_strand_specific_conversion 
 
+def zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder):
+    print("No edits found.")
+    Sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
+    sites_empty_df = pd.DataFrame(columns=Sites_columns)
+    sites_empty_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), sep='\t', index=False)
+
+    Annotated_sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion','feature_name','feature_type','feature_strand']
+    annotated_sites_empty_df = pd.DataFrame(columns=Annotated_sites_columns)
+    annotated_sites_empty_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), sep='\t', index=False)
+
+    empty_df = pd.DataFrame()
+    if len(sailor_list) > 0:
+        for conversion in sailor_list:
+            conversion_search = conversion[0] + '>' + conversion[1]
+            empty_df.to_csv('{}/sailor_style_sites_{}.bed'.format(
+                output_folder, 
+                conversion_search.replace(">", "-")), 
+                header=False, index=False, sep='\t')
+
+    if len(bedgraphs_list) > 0:
+        bedgraph_folder = '{}/bedgraphs'.format(output_folder)
+        make_folder(bedgraph_folder)
+        for conversion in bedgraphs_list:
+            conversion_search = conversion[0] + '>' + conversion[1]
+            empty_df.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
+            
+    current, peak = tracemalloc.get_traced_memory()
+
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'sites\t{len(final_site_level_information_df)}\n') 
+        f.write(f'peak_memory_mb\t{peak/1e6}\n') 
+        f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
+
+    print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
+    print(f'Time elapsed: {time.time()-start_time:.2f}s')
+
+    if not keep_intermediate_files:
+        pretty_print("Deleting intermediate files...", style="-")
+        delete_intermediate_files(output_folder)
+
+    pretty_print("Done!", style="+")
+    return 'Done'
+
+
 def delete_intermediate_files(output_folder):
     to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
                  'concat_command.sh', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
@@ -67,7 +111,6 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
         cores=cores,
         min_read_quality=min_read_quality
     )
-
     
     #print(overall_label_to_list_of_contents.keys())
     #print(overall_label_to_list_of_contents.get(list(overall_label_to_list_of_contents.keys())[0]))
@@ -404,10 +447,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
         all_filter_stats = pd.DataFrame([r[1] for r in results]).sum(axis=0)
         print(all_filter_stats)
-        
+        if len(all_filter_stats) == 0:
+            original_edits = float(0)
+            filtered_edits = float(0)
+        else:
+            original_edits = float(all_filter_stats.loc["original"])
+            filtered_edits = float(all_filter_stats.loc["filtered"])
+
         with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-            f.write(f'original_edits\t{float(all_filter_stats.loc["original"])}\n') 
-            f.write(f'filtered_edits\t{float(all_filter_stats.loc["filtered"])}\n')
+            f.write(f'original_edits\t{original_edits}\n') 
+            f.write(f'filtered_edits\t{filtered_edits}\n')
          
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
 
@@ -447,10 +496,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         final_site_level_information_df = generate_site_level_information(all_edit_info_filtered_pl, skip_coverage=skip_coverage)
         pretty_print("\tNumber of unique edit sites:\n\t{}".format(len(final_site_level_information_df)))
         pretty_print("Writing sites...\n")
+        
+        # Edge case when no edits are found.
+        if len(final_site_level_information_df) == 0:
+            output_zero_edit_files = zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder)
+            return 'Done!'
+        
         final_site_level_information_df.write_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   separator='\t')
-
-        
+       
+            
         pretty_print("Adding strand-specific conversion...\n")
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
@@ -503,6 +558,14 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
         not annotating with feature information and strand-specific conversions.")
+        
+    if final_path_already_exists:
+        # Edge case when no edits are found.
+        final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
+                                                  sep='\t')
+        if len(final_site_level_information_df) == 0:
+            output_zero_edit_files = zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder)
+            return 'Done!'
     
     if final_path_already_exists and annotation_bedfile_path:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 

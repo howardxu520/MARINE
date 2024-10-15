@@ -43,7 +43,6 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
 
     all_counts_summary_dfs = []
     overall_count_summary_dict = defaultdict(lambda:0)
-    
     #multiprocessing.set_start_method('spawn')
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
@@ -58,7 +57,6 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
                 if barcode_tag: 
                     # Only keep this information for single cell requirements
                     overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
-
                 total_reads = _[3]
                 counts_summary_df = _[4]
                 all_counts_summary_dfs.append(counts_summary_df)
@@ -70,13 +68,16 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
                 total_seconds_for_reads[overall_total_reads] = total_time
 
     overall_time = time.perf_counter() - start_time 
+    
+    if len(all_counts_summary_dfs) == 0:
+        return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, pd.DataFrame()
 
     all_counts_summary_dfs_combined = pd.concat(all_counts_summary_dfs, axis=1)
     #print(all_counts_summary_dfs_combined.index, all_counts_summary_dfs_combined.columns)
     
     overall_count_summary_df = pd.DataFrame.from_dict(all_counts_summary_dfs_combined).sum(axis=1)
     #print(overall_count_summary_df)
-    
+
     return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
 
 
@@ -412,6 +413,9 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
 
 
 def add_site_id(all_edit_info):
+    if len(all_edit_info) == 0:
+        return all_edit_info
+
     return all_edit_info.with_columns(
         pl.concat_str(
             [
@@ -442,6 +446,10 @@ def generate_site_level_information(all_edit_info, skip_coverage=False):
     number_of_edits = len(all_edit_info)
 
     all_edit_info = add_site_id(all_edit_info)
+    
+    if len(all_edit_info) == 0:
+        print("DataFrame is empty. Returning an empty DataFrame.")
+        return all_edit_info
 
     identifying_values = ["site_id", "barcode", "contig", "position", "ref", "alt", "strand"]
 
