@@ -395,27 +395,27 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         
         # Single-end bulk, we can leverage the speed of samtools depth function for this
         else:
-            coverage_df = calculate_coverage_single_end_bulk(coverage_dict, edit_info_for_barcode, bam_subfolder, contig)
+            calculate_coverage_single_end_bulk(coverage_dict, positions_for_barcode, bam_subfolder, contig, contig_bam,
+                                                            verbose=verbose)
             
             
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
     
     return coverage_df
 
-def calculate_coverage_single_end_bulk(coverage_dict, edit_info_for_barcode, bam_subfolder, contig):
+def calculate_coverage_single_end_bulk(coverage_dict, positions_for_barcode, bam_subfolder, contig, contig_bam, verbose=False):
     print("Running SINGLE END coverage approach using samtools depth")
-    positions = edit_info_for_barcode["position"].unique()
     bed_file = f"{bam_subfolder}/{contig}_positions.bed"
     
     # Write positions to BED file
     with open(bed_file, "w") as f:
-        for pos in positions:
+        for pos in positions_for_barcode:
             f.write(f"{contig.split('_')[0]}\t{pos-1}\t{pos}\n")  # BED is 0-based, half-open
     
     # Call samtools depth using the BED file
     command = f"samtools depth -b {bed_file} {contig_bam}"
-    if verbose:
-        print(f"Running command: {command}")
+    
+    print(f"Running command: {command}, contig is {contig}, bam_subfolder is {bam_subfolder}")
 
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     
@@ -425,11 +425,13 @@ def calculate_coverage_single_end_bulk(coverage_dict, edit_info_for_barcode, bam
             key = f'no_barcode:{pos}'
             coverage_dict[key]['coverage'] = int(coverage)
             coverage_dict[key]['source'] = contig
+        # Remove temporary BED file after use
+        os.remove(bed_file)
+    
     else:
         print("Samtools depth failed or returned no data.")
     
-    # Remove temporary BED file after use
-    os.remove(bed_file)
+    return coverage_dict
 
 def filter_output_df(output_df, filters, output_filename):
     filter_stats = {}
