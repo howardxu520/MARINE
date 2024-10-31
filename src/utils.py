@@ -312,6 +312,11 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
         return coverage_at_pos
 
 
+import subprocess
+import pandas as pd
+from collections import defaultdict
+  
+
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
                     verbose=False):
 
@@ -327,7 +332,8 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
     #print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
     try:
-        index_bam(contig_bam)
+        if not os.path.exists(contig_bam + '.bai'):
+            index_bam(contig_bam)
         samfile_for_barcode = pysam.AlignmentFile(contig_bam, "rb")
     except OSError:  # If MARINE cannot find a bam to index, return empty
         return pd.DataFrame(columns=['coverage', 'source'])
@@ -346,50 +352,84 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
                     
         num_positions = len(positions_for_barcode)
-        for i, pos in enumerate(positions_for_barcode):
-            
-            if barcode_tag:
+
+        # For single-cell or paired end approach, we will iterate through every single position in this subset of the data
+        # and run the appropriate coverage-counting function.
+        if barcode_tag or paired_end:
+            for i, pos in enumerate(positions_for_barcode):
                 # For single-cell
-                
-                barcode_specific_contig = '{}_{}'.format(contig, barcode)
-                # Alter from 3_C_AAACCCAAGAACTTCC-1, for example, to 3_AAACCCAAGAACTTCC-1'
-                barcode_specific_contig_split = barcode_specific_contig.split("_")
-                barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
+                if barcode_tag:
+                    barcode_specific_contig = '{}_{}'.format(contig, barcode)
+                    # Alter from 3_C_AAACCCAAGAACTTCC-1, for example, to 3_AAACCCAAGAACTTCC-1'
+                    barcode_specific_contig_split = barcode_specific_contig.split("_")
+                    barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
+    
+                    if verbose:
+                        #print("contig_bam:", contig_bam)
+                        #print("barcode_specific_contig:", barcode_specific_contig)
+                        print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
+                        
+                    coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
+                                                                                pos-1, 
+                                                                                pos,  
+                                                                                quality_threshold=0, # base quality
+                                                                                read_callback='all'
+                                                                               ))
+    
+                    coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
+                    coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
 
-                if verbose:
-                    #print("contig_bam:", contig_bam)
-                    #print("barcode_specific_contig:", barcode_specific_contig)
-                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
-                    
-                coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
-                                                                            pos-1, 
-                                                                            pos,  
-                                                                            quality_threshold=0, # base quality
-                                                                            read_callback='all'
-                                                                           ))
-
-                coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
-                coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
-                
-            else:
-                
                 # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
-                just_contig = contig.split('_')[0]
-                try:
-                    coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
-                                                               paired_end=paired_end, verbose=verbose)
-                                
-                    coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
-                    coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
-
-                except Exception as e:
-                    print("contig {}".format(contig), "Failed to get coverage", e)
-                    return pd.DataFrame(columns=['coverage', 'source'])  # Should we just return empty? Or why would there be an exception here?
-                
+                else:  
+                    just_contig = contig.split('_')[0]
+                    try:
+                        coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
+                                                                   paired_end=paired_end, verbose=verbose)
+                                    
+                        coverage_dict['{}:{}'.format('no_barcode', pos)]['coverage'] = coverage_at_pos
+                        coverage_dict['{}:{}'.format('no_barcode', pos)]['source'] = contig
+    
+                    except Exception as e:
+                        print("contig {}".format(contig), "Failed to get coverage", e)
+                        return pd.DataFrame(columns=['coverage', 'source'])  # Should we just return empty? Or why would there be an exception here?
+        
+        # Single-end bulk, we can leverage the speed of samtools depth function for this
+        else:
+            coverage_df = calculate_coverage_single_end_bulk(coverage_dict, edit_info_for_barcode, bam_subfolder, contig)
+            
+            
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
     
     return coverage_df
 
+def calculate_coverage_single_end_bulk(coverage_dict, edit_info_for_barcode, bam_subfolder, contig):
+    print("Running SINGLE END coverage approach using samtools depth")
+    positions = edit_info_for_barcode["position"].unique()
+    bed_file = f"{bam_subfolder}/{contig}_positions.bed"
+    
+    # Write positions to BED file
+    with open(bed_file, "w") as f:
+        for pos in positions:
+            f.write(f"{contig.split('_')[0]}\t{pos-1}\t{pos}\n")  # BED is 0-based, half-open
+    
+    # Call samtools depth using the BED file
+    command = f"samtools depth -b {bed_file} {contig_bam}"
+    if verbose:
+        print(f"Running command: {command}")
+
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    
+    if result.returncode == 0:
+        for line in result.stdout.strip().splitlines():
+            chrom, pos, coverage = line.split()
+            key = f'no_barcode:{pos}'
+            coverage_dict[key]['coverage'] = int(coverage)
+            coverage_dict[key]['source'] = contig
+    else:
+        print("Samtools depth failed or returned no data.")
+    
+    # Remove temporary BED file after use
+    os.remove(bed_file)
 
 def filter_output_df(output_df, filters, output_filename):
     filter_stats = {}
