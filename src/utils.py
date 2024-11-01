@@ -404,6 +404,8 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
     return coverage_df
 
 def calculate_coverage_single_end_bulk(coverage_dict, positions_for_barcode, bam_subfolder, contig, contig_bam, verbose=False):
+    # Parallel Processing: If you need parallelism, consider splitting the BAM file by chromosome or region rather than by number of sites. Each chunk could then be processed separately with minimal overlap.
+    
     print("Running SINGLE END coverage approach using samtools depth")
     bed_file = f"{bam_subfolder}/{contig}_positions.bed"
     
@@ -413,7 +415,7 @@ def calculate_coverage_single_end_bulk(coverage_dict, positions_for_barcode, bam
             f.write(f"{contig.split('_')[0]}\t{pos-1}\t{pos}\n")  # BED is 0-based, half-open
     
     # Call samtools depth using the BED file
-    command = f"samtools depth -b {bed_file} {contig_bam}"
+    command = f"samtools depth -a -q 0 -Q 0 -b {bed_file} {contig_bam}"
     
     print(f"Running command: {command}, contig is {contig}, bam_subfolder is {bam_subfolder}")
 
