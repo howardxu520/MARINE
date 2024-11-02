@@ -91,7 +91,8 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     return contigs_to_write_bams_for
 
 
-def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, min_read_quality = 0):
+def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):
+    
     jobs = []
     
     samfile = pysam.AlignmentFile(bampath, "rb")
@@ -116,7 +117,7 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
         # Set up for pool
         for split_index, interval in enumerate(intervals_for_contig):
             split_index = str(split_index).zfill(3)
-            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality]
+            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality, min_base_quality, dist_from_end]
             jobs.append(parameters)
     return jobs
 
