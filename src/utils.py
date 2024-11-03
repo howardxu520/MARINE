@@ -441,33 +441,35 @@ def get_coverage_wrapper(parameters):
     edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
 
     output_filename = '{}/coverage/{}.tsv'.format(output_folder, contig, header=False)
-    
+
+    """
     if os.path.exists(output_filename):
         # filter
         edit_info_and_coverage_joined = pd.read_csv(output_filename, sep='\t', names=[
-            'barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
+            'barcode_position_index', 'barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
             'dist_from_end', 'base_quality', 'mapping_quality', 'barcode_position',
             'coverage', 'source', 'position_barcode'], dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
     else:
-        edit_info = edit_info.with_columns(
-        pl.concat_str(
-            [
-                pl.col("barcode"),
-                pl.col("position")
-            ],
-            separator=":",
-        ).alias("barcode_position"))
+    """
+    edit_info = edit_info.with_columns(
+    pl.concat_str(
+        [
+            pl.col("barcode"),
+            pl.col("position")
+        ],
+        separator=":",
+    ).alias("barcode_position"))
+
+    edit_info_df = edit_info.to_pandas()
+    edit_info_df.index = edit_info_df['barcode_position']
     
-        edit_info_df = edit_info.to_pandas()
-        edit_info_df.index = edit_info_df['barcode_position']
-        
-        coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
-                                      paired_end=paired_end, verbose=verbose)
-    
-        # Combine edit i)nformation with coverage information
-        edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
-        edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
-        edit_info_and_coverage_joined.to_csv(output_filename, sep='\t', header=False)
+    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
+                                  paired_end=paired_end, verbose=verbose)
+
+    # Combine edit i)nformation with coverage information
+    edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
+    edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
+    edit_info_and_coverage_joined.to_csv(output_filename, sep='\t', header=False)
 
     assert(os.path.exists(output_filename))
     return output_filename

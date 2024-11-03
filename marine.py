@@ -408,10 +408,11 @@ def get_edits_with_coverage_df(output_folder,
     # For single-cell or paired end, which was calculated using the pysam coverage functions.
     if barcode_tag or paired_end:
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     index_col=0,
                                                                      names=[
-                                                                         'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
-                                                                         'strand',
-                                                                         'coverage'], dtype={'coverage': int, 'position': int,
+                                                                         'barcode_position_index', 'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
+                                                                         'strand', 'barcode_position', 
+                                                                         'coverage', 'source', 'position_barcode'], dtype={'coverage': int, 'position': int,
                                                                                              'contig': str})
 
     else:
