@@ -184,7 +184,7 @@ def concatenate_files(source_folder, file_pattern, output_filepath):
 
 
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
-                       min_read_quality=0, bam_filepath='', filters=None):
+                       min_read_quality=0, bam_filepath=''):
 
     # Single-cell or long read version:
     edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
@@ -200,10 +200,9 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                             barcode_tag=barcode_tag,
                                                                             paired_end=paired_end,
                                                                             verbose=verbose,
-                                                                            processes=cores,
-                                                                            filters=filters
+                                                                            processes=cores
                                                                            )
-    concatenate_files(output_folder, "edit_info/*_filtered.tsv", "{}/final_edit_info.tsv".format(output_folder))
+    concatenate_files(output_folder, "coverage/*.tsv", "{}/final_edit_info.tsv".format(output_folder))
     
     total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
     total_seconds_for_contig_df.columns = ['seconds']
@@ -407,12 +406,18 @@ def get_edits_with_coverage_df(output_folder,
                                paired_end=False):
 
     # For single-cell or paired end, which was calculated using the pysam coverage functions.
-    all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+    if barcode_tag or paired_end:
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      names=[
                                                                          'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
                                                                          'strand',
-                                                                         'coverage'])
+                                                                         'coverage'], dtype={'coverage': int, 'position': int,
+                                                                                             'contig': str})
 
+    else:
+        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     dtype={'coverage': int, 'position': int,
+                                                                                             'contig': str})
     return all_edit_info_unique_position_with_coverage_df
         
         
@@ -532,13 +537,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
-
-        filters = {
-            'dist_from_end': min_dist_from_end,
-            'base_quality': min_base_quality,
-            'max_edits_per_read': max_edits_per_read
-        }
-
+        
         if barcode_tag or paired_end:
             results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                    barcode_tag=barcode_tag, 
@@ -547,27 +546,13 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                                                                                    cores=cores,
                                                                                    number_of_expected_bams=number_of_expected_bams,
                                                                                    min_read_quality=min_read_quality,
-                                                                                   bam_filepath=bam_filepath,
-                                                                                   filters=filters
+                                                                                   bam_filepath=bam_filepath
                                                                                   )
         else:
             # for bulk single-end, we will just concatenate all the edits files into one big bed file, and then run samtools depth
             total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, bam_filepath)
 
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
-
-        all_filter_stats = pd.DataFrame([r[1] for r in results]).sum(axis=0)
-        print(all_filter_stats)
-        if len(all_filter_stats) == 0:
-            original_edits = float(0)
-            filtered_edits = float(0)
-        else:
-            original_edits = float(all_filter_stats.loc["original"])
-            filtered_edits = float(all_filter_stats.loc["filtered"])
-
-        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-            f.write(f'original_edits\t{original_edits}\n') 
-            f.write(f'filtered_edits\t{filtered_edits}\n')
          
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
 

@@ -316,15 +316,13 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined,
                             barcode_tag='CB',
                             paired_end=False, 
                             verbose=False,
-                            processes=16,
-                            filters=None,
+                            processes=16
                            ):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
-        filters=filters,
         verbose=verbose
     )
     
@@ -353,12 +351,12 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined,
 
 
 def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder,
-                                                    barcode_tag='CB', paired_end=False, filters=None, verbose=False):
+                                                    barcode_tag='CB', paired_end=False, verbose=False):
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
                     
-        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, filters, verbose])  
+        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose])  
         
     return job_params
 
@@ -389,9 +387,6 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
         edit_info_df = pd.read_csv(edit_info_file, sep='\t')
         edit_info_df['contig'] = edit_info_df['contig'].astype(str)
         edit_info_df['position'] = edit_info_df['position'].astype(int)
-        edit_info_df['base_quality'] = edit_info_df['base_quality'].astype(int)
-        edit_info_df['mapping_quality'] = edit_info_df['mapping_quality'].astype(int)
-        edit_info_df['dist_from_end'] = edit_info_df['dist_from_end'].astype(int)
 
         edit_info = pl.from_pandas(edit_info_df) 
         
