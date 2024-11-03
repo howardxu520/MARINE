@@ -166,21 +166,21 @@ import subprocess
 
 
 def concatenate_files(source_folder, file_pattern, output_filepath):
-    # Create the concatenation command with placeholders for the folder and pattern
-    # Use tail -n +2 to skip the header row in each file
+    # Create the concatenation command with numeric sorting and header skipping
     concat_command = (
-        "for f in {}/{}; do tail -n +2 \"$f\"; done > {}"
-    ).format(source_folder, file_pattern, output_filepath)
+        f"for f in $(ls -v {source_folder}/{file_pattern}); do "
+        "tail -n +2 \"$f\"; "  # Skip the header row for each file
+        "done > {}".format(output_filepath)
+    )
 
     # Write the command to a shell script
-    concat_bash = '{}/concat_command.sh'.format(source_folder)
+    concat_bash = f"{source_folder}/concat_command.sh"
     with open(concat_bash, 'w') as f:
         f.write(concat_command)
         
-    print("Concatenating files without headers...")
+    print("Concatenating files in numerical order without headers...")
     subprocess.run(['bash', concat_bash])
     print("Done concatenating.")
-
 
 
 def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
@@ -339,11 +339,11 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
     # Step 1: Adjust the third column of depths by subtracting 1 and convert to tab-separated format
     awk -v OFS='\\t' '{{print $1, $2-1, $3}}' "{file2_path}" > {output_folder}/depth_modified.tsv
 
-    # Step 2: Sort the first file numerically by the join column (third column in final_edits, position)
-    sort -k3,3n "{file1_path}" > {output_folder}/final_edits_no_coverage_sorted.tsv
+    # Step 2: Sort the first file numerically by the join column (third column in final_edits)
+    sort -k3,3n "{file1_path}" > {output_folder}/final_edit_info_no_coverage_sorted.tsv
 
     # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
-join -1 3 -2 2 -t $'\\t' {output_folder}/final_edits_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $1, $2, $3, $4, $5, $6, $7, $9}}' > "{output_file_path}"
+join -1 3 -2 2 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $1, $4, $5, $6, $7, $9}}' > "{output_file_path}"
 
     # Step 4: Add header to the output file
     echo -e "{header}" | cat - "{output_file_path}" > temp && mv temp "{output_file_path}"
@@ -406,20 +406,14 @@ def get_edits_with_coverage_df(output_folder,
                                barcode_tag=None, 
                                paired_end=False):
 
-    if barcode_tag or paired_end:
-        # For single-cell or paired end, which was calculated using the pysam coverage functions.
-        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
-                                                                         index_col=0,
-                                                                         names=[
-                                                                             'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
-                                                                             'strand', 'mapping_quality',
-                                                                             'coverage'],
-                                                                         dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
+    # For single-cell or paired end, which was calculated using the pysam coverage functions.
+    all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     names=[
+                                                                         'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
+                                                                         'strand',
+                                                                         'coverage'])
 
-    else:
-        # If single-end bulk, we will concat the pre-concatted edit fractions with the pre-concatted depths,
-        # add a header and just return that file.
-        depths_file = '{}/coverage/depths.txt'.format(output_folder)
+    return all_edit_info_unique_position_with_coverage_df
         
         
         
@@ -719,7 +713,18 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         delete_intermediate_files(output_folder)
 
     pretty_print("Done!", style="+")
-    
+
+def check_samtools():
+    try:
+        # Run 'samtools --version' to check if samtools is available
+        subprocess.run(["samtools", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("Samtools is available.")
+    except subprocess.CalledProcessError:
+        print("Samtools is installed but encountered an issue running.")
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: Samtools is not installed or not found in PATH.")
+        sys.exit(1)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
@@ -851,6 +856,10 @@ if __name__ == '__main__':
                   "\tSkip coverage?:\t{}".format(skip_coverage),
                   "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist)
                  ])
+
+    if not barcode_tag and not paired_end:
+        # Check to see that samtools is available in the environment
+        check_samtools()
 
     # Whether to only run for certain contigs 
     if contigs == 'all':

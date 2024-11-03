@@ -454,7 +454,7 @@ def get_count_and_coverage_per_site(all_edit_info, skip_coverage=False):
 
 def generate_site_level_information(all_edit_info, skip_coverage=False):
     number_of_edits = len(all_edit_info)
-
+    
     all_edit_info = add_site_id(all_edit_info)
     
     if len(all_edit_info) == 0:
