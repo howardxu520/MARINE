@@ -18,4 +18,4 @@ $MARINE/tests/strandedness_tests/F1R2_pair_test-single_end_mode \
 --contigs "chr17" \
 --sailor \
 --verbose \
---num_intervals_per_contig 16
+--num_intervals_per_contig 16 --keep_intermediate_files

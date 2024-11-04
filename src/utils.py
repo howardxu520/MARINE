@@ -364,11 +364,6 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 # Alter from 3_C_AAACCCAAGAACTTCC-1, for example, to 3_AAACCCAAGAACTTCC-1'
                 barcode_specific_contig_split = barcode_specific_contig.split("_")
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
-
-                if verbose:
-                    #print("contig_bam:", contig_bam)
-                    #print("barcode_specific_contig:", barcode_specific_contig)
-                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
                     
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
                                                                             pos-1, 
@@ -380,6 +375,15 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
 
+                if verbose:
+                    #print("contig_bam:", contig_bam)
+                    #print("barcode_specific_contig:", barcode_specific_contig)
+                    print('contig_bam', contig_bam)
+                    print("barcode_specific_contig_split", barcode_specific_contig_split)
+                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
+                    print('barcode', barcode, 'position', pos)
+                    print(coverage_dict['{}:{}'.format(barcode, pos)])
+                    
             # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
             else:  
                 just_contig = contig.split('_')[0]
@@ -428,13 +432,21 @@ def get_coverage_wrapper(parameters):
     coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
                                   paired_end=paired_end, verbose=verbose)
 
+    if verbose:
+        if not coverage_df.empty:
+            print('coverage_df', coverage_df)
+        
     # Combine edit information with coverage information
     edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
     edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
 
+    if verbose:
+        if not edit_info_and_coverage_joined.empty:
+            print('edit_info_and_coverage_joined', edit_info_and_coverage_joined)
+
     edit_info_and_coverage_joined = edit_info_and_coverage_joined.drop_duplicates()
     
-    edit_info_and_coverage_joined.to_csv(output_filename, sep='\t', header=False)
+    edit_info_and_coverage_joined.to_csv(output_filename, sep='\t')
 
     assert(os.path.exists(output_filename))
     return output_filename
