@@ -17,4 +17,5 @@ $MARINE/tests/strandedness_tests/same_pos_dif_reads_test \
 --strandedness 2 \
 --contigs "chr17" \
 --verbose \
---num_intervals_per_contig 16
+--num_intervals_per_contig 16 \
+--keep_intermediate_files

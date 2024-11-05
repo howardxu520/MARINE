@@ -91,7 +91,8 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     return contigs_to_write_bams_for
 
 
-def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, min_read_quality = 0):
+def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):
+    
     jobs = []
     
     samfile = pysam.AlignmentFile(bampath, "rb")
@@ -116,7 +117,7 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
         # Set up for pool
         for split_index, interval in enumerate(intervals_for_contig):
             split_index = str(split_index).zfill(3)
-            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality]
+            parameters = [bampath, contig, split_index, interval[0], interval[1], output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality, min_base_quality, dist_from_end]
             jobs.append(parameters)
     return jobs
 
@@ -214,7 +215,7 @@ def write_rows_to_info_file(list_of_rows, f):
         f.write(info_line)
         
 def write_header_to_edit_info(f):
-    f.write('barcode\tcontig\tposition\tref\talt\tread_id\tstrand\tdist_from_end\tbase_quality\tmapping_quality\n')
+    f.write('barcode\tcontig\tposition\tref\talt\tread_id\tstrand\n')
     
 def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path, samfile_template):
     bam_for_barcode = bam_handles_for_barcodes.get(barcode_bam_file_path)
@@ -312,9 +313,15 @@ def get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
         return coverage_at_pos
 
 
+import subprocess
+import pandas as pd
+from collections import defaultdict
+  
+
 def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_end=False, 
                     verbose=False):
-
+    # Just for single-cell, or bulk paired-end
+    
     if barcode_tag:
         # Single-cell, contig will include barcode ending-based suffix 
         bam_subfolder = "{}/split_bams/{}".format(output_folder, contig)
@@ -327,7 +334,8 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
     #print("Contig {}. Loading {} bamfile...".format(contig, contig_bam))
     try:
-        index_bam(contig_bam)
+        if not os.path.exists(contig_bam + '.bai'):
+            index_bam(contig_bam)
         samfile_for_barcode = pysam.AlignmentFile(contig_bam, "rb")
     except OSError:  # If MARINE cannot find a bam to index, return empty
         return pd.DataFrame(columns=['coverage', 'source'])
@@ -346,20 +354,16 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
         positions_for_barcode = set(edit_info_for_barcode["position"].unique())
                     
         num_positions = len(positions_for_barcode)
+
+        # For single-cell or paired end approach, we will iterate through every single position in this subset of the data
+        # and run the appropriate coverage-counting function.
         for i, pos in enumerate(positions_for_barcode):
-            
+            # For single-cell
             if barcode_tag:
-                # For single-cell
-                
                 barcode_specific_contig = '{}_{}'.format(contig, barcode)
                 # Alter from 3_C_AAACCCAAGAACTTCC-1, for example, to 3_AAACCCAAGAACTTCC-1'
                 barcode_specific_contig_split = barcode_specific_contig.split("_")
                 barcode_specific_contig_without_subdivision = "{}_{}".format(barcode_specific_contig_split[0], barcode_specific_contig_split[2])
-
-                if verbose:
-                    #print("contig_bam:", contig_bam)
-                    #print("barcode_specific_contig:", barcode_specific_contig)
-                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
                     
                 coverage_at_pos = np.sum(samfile_for_barcode.count_coverage(barcode_specific_contig_without_subdivision, 
                                                                             pos-1, 
@@ -370,10 +374,18 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
 
                 coverage_dict['{}:{}'.format(barcode, pos)]['coverage'] = coverage_at_pos
                 coverage_dict['{}:{}'.format(barcode, pos)]['source'] = contig
-                
-            else:
-                
-                # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
+
+                if verbose:
+                    #print("contig_bam:", contig_bam)
+                    #print("barcode_specific_contig:", barcode_specific_contig)
+                    print('contig_bam', contig_bam)
+                    print("barcode_specific_contig_split", barcode_specific_contig_split)
+                    print("barcode_specific_contig_without_subdivision:", barcode_specific_contig_without_subdivision)
+                    print('barcode', barcode, 'position', pos)
+                    print(coverage_dict['{}:{}'.format(barcode, pos)])
+                    
+            # For bulk, no barcodes, we will just have for example 19_no_barcode to convert to 19 to get coverage at that chrom
+            else:  
                 just_contig = contig.split('_')[0]
                 try:
                     coverage_at_pos = get_bulk_coverage_at_pos(samfile_for_barcode, contig_bam, just_contig, pos, 
@@ -385,117 +397,59 @@ def get_coverage_df(edit_info, contig, output_folder, barcode_tag='CB', paired_e
                 except Exception as e:
                     print("contig {}".format(contig), "Failed to get coverage", e)
                     return pd.DataFrame(columns=['coverage', 'source'])  # Should we just return empty? Or why would there be an exception here?
-                
+            
     coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index')
     
     return coverage_df
 
-
-def filter_output_df(output_df, filters, output_filename):
-    filter_stats = {}
-    filter_stats['original'] = len(output_df)
-    if output_df.empty:
-        filter_stats['filtered'] = len(output_df)
-        output_df['coverage'] = []
-        output_df.to_csv(output_filename, sep='\t', header=False)
-        return filter_stats
-    
-    filtered_output_df = output_df[
-            (output_df.dist_from_end >= filters.get('dist_from_end')) & 
-            (output_df.base_quality >= filters.get('base_quality'))]
-
-    coverage_per_unique_position_df = pd.DataFrame(filtered_output_df.groupby(
-        [
-            "position_barcode"
-        ]).coverage.max())
-
-    distinguishing_columns = [
-        "barcode",
-        "contig",
-        "position",
-        "ref",
-        "alt",
-        "read_id",
-        "strand",
-        "dist_from_end",
-        "base_quality",
-        "mapping_quality"
-    ]
-
-    
-    all_edit_info_unique_position_df = filtered_output_df.drop_duplicates(distinguishing_columns)[distinguishing_columns]
-
-    all_edit_info_unique_position_df.index = all_edit_info_unique_position_df['position'].astype(str)\
-+ '_' + all_edit_info_unique_position_df['barcode']
-
-    all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_df.join(coverage_per_unique_position_df)
-
-    if filters.get('max_edits_per_read'):
-        #pretty_print("\t\tFiltering out reads with more than {} edits...".format(max_edits_per_read))
-        read_edits = all_edit_info_unique_position_with_coverage_df.groupby('read_id').count().sort_values('barcode')
-        all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_with_coverage_df[all_edit_info_unique_position_with_coverage_df.read_id.isin(read_edits[read_edits['barcode'] <= max_edits_per_read].index)]
-
-
-    distinguishing_columns = [
-            "barcode",
-            "contig",
-            "position",
-            "ref",
-            "alt",
-            "read_id",
-            "strand",
-            "mapping_quality",
-            "coverage"
-        ]
-
-    all_edit_info_unique_position_with_coverage_df = all_edit_info_unique_position_with_coverage_df.drop_duplicates(
-            distinguishing_columns)[distinguishing_columns]
-    
-    filter_stats['filtered'] = len(all_edit_info_unique_position_with_coverage_df)
-
-    
-    all_edit_info_unique_position_with_coverage_df.to_csv(output_filename, sep='\t', header=False)
-
-    return filter_stats
-
     
 def get_coverage_wrapper(parameters):
-    edit_info, contig, output_folder, barcode_tag, paired_end, filters, verbose = parameters
+    edit_info, contig, output_folder, barcode_tag, paired_end, verbose = parameters
 
     output_filename = '{}/coverage/{}.tsv'.format(output_folder, contig, header=False)
-    filtered_output_filename = '{}/coverage/{}_filtered.tsv'.format(output_folder, contig, header=False)
-    
+
+    """
     if os.path.exists(output_filename):
         # filter
         edit_info_and_coverage_joined = pd.read_csv(output_filename, sep='\t', names=[
-            'barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
+            'barcode_position_index', 'barcode', 'contig', 'position', 'ref', 'alt', 'read_id', 'strand',
             'dist_from_end', 'base_quality', 'mapping_quality', 'barcode_position',
             'coverage', 'source', 'position_barcode'], dtype={'base_quality': int, 'dist_from_end': int, 'contig': str})
     else:
-        edit_info = edit_info.with_columns(
-        pl.concat_str(
-            [
-                pl.col("barcode"),
-                pl.col("position")
-            ],
-            separator=":",
-        ).alias("barcode_position"))
-    
-        edit_info_df = edit_info.to_pandas()
-        edit_info_df.index = edit_info_df['barcode_position']
-        
-        coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
-                                      paired_end=paired_end, verbose=verbose)
-    
-        # Combine edit i)nformation with coverage information
-        edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
-        edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
-        edit_info_and_coverage_joined.to_csv(output_filename, sep='\t', header=False)
+    """
+    edit_info = edit_info.with_columns(
+    pl.concat_str(
+        [
+            pl.col("barcode"),
+            pl.col("position")
+        ],
+        separator=":",
+    ).alias("barcode_position"))
 
-    filter_stats = filter_output_df(edit_info_and_coverage_joined, filters, filtered_output_filename)
+    edit_info_df = edit_info.to_pandas()
+    edit_info_df.index = edit_info_df['barcode_position']
+    
+    coverage_df = get_coverage_df(edit_info, contig, output_folder, barcode_tag=barcode_tag, 
+                                  paired_end=paired_end, verbose=verbose)
+
+    if verbose:
+        if not coverage_df.empty:
+            print('coverage_df', coverage_df)
+        
+    # Combine edit information with coverage information
+    edit_info_and_coverage_joined = edit_info_df.join(coverage_df, how='inner')
+    edit_info_and_coverage_joined['position_barcode'] = edit_info_and_coverage_joined['position'].astype(str) + '_' + edit_info_and_coverage_joined['barcode'].astype(str)
+
+    if verbose:
+        if not edit_info_and_coverage_joined.empty:
+            print('edit_info_and_coverage_joined', edit_info_and_coverage_joined)
+
+    edit_info_and_coverage_joined = edit_info_and_coverage_joined.drop_duplicates()
+    
+    edit_info_and_coverage_joined.to_csv(output_filename, sep='\t')
+
     assert(os.path.exists(output_filename))
-    assert(os.path.exists(filtered_output_filename))
-    return filtered_output_filename, filter_stats
+    return output_filename
     
 
 

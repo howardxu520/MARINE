@@ -107,7 +107,8 @@ def print_read_info(read):
 
     print(str(read))
     
-def get_read_information(read, contig, barcode_tag='CB', verbose=False, strandedness=0, min_read_quality = 0):
+def get_read_information(read, contig, barcode_tag='CB', verbose=False, strandedness=0, 
+                         min_read_quality=0, min_base_quality=0, dist_from_end=0):
     if barcode_tag is None:
         read_barcode = 'no_barcode'
     elif read.has_tag(barcode_tag):
@@ -226,12 +227,15 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
         
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
-        list_of_rows.append([
-            read_barcode, str(contig), str(updated_position), ref, alt, read_id, reverse_or_forward, str(distance_from_read_end), str(qual), str(mapq)
-        ])
+        if distance_from_read_end >= dist_from_end and int(qual) >= min_base_quality:
+            
+            list_of_rows.append([
+                read_barcode, str(contig), str(updated_position), ref, alt, read_id, reverse_or_forward
+            ])
         
-        num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
-    
+            num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
+        
+                  
     return None, list_of_rows, num_edits_of_each_type
 
 

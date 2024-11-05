@@ -23,12 +23,13 @@ get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes
 
 import os, psutil
 
-def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality = 0):
+def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0):
+
     # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
     make_folder(edit_info_subfolder)
     
-    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag, barcode_whitelist, contigs, num_intervals_per_contig, verbose, min_read_quality)
+    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag, barcode_whitelist, contigs, num_intervals_per_contig, verbose, min_read_quality, min_base_quality, dist_from_end)
     pretty_print("{} total jobs".format(len(edit_finding_jobs)))
     
     # Performance statistics
@@ -130,7 +131,7 @@ def write_bam_file(reads, bam_file_name, header_string):
         print("Failed at indexing {}, {}".format(bam_file_name, e))
         
 
-def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_tag="CB", strandedness=0, barcode_whitelist=None, verbose=False, min_read_quality = 0):  
+def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_tag="CB", strandedness=0, barcode_whitelist=None, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):  
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
         
     time_reporting = {}
@@ -147,6 +148,8 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     reads_for_contig = samfile.fetch(contig, start, end, multiple_iterators=True)
         
     output_file = '{}/{}_{}_{}_{}_edit_info.tsv'.format(edit_info_subfolder, contig, split_index, start, end)
+    output_bedfile = '{}/{}_{}_{}_{}_edit_positions.bed'.format(edit_info_subfolder, contig, split_index, start, end)
+    
     remove_file_if_exists(output_file)
     
     with open(output_file, 'w') as f:        
@@ -177,7 +180,8 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
                     continue
             
             try:
-                error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, strandedness=strandedness, barcode_tag=barcode_tag, verbose=verbose, min_read_quality=min_read_quality)
+                error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, strandedness=strandedness, barcode_tag=barcode_tag, verbose=verbose, min_read_quality=min_read_quality, min_base_quality=min_base_quality, 
+dist_from_end=dist_from_end)
             except Exception as e:
                 print("Failed getting read info on\n{}, {}".format(read.to_string(), e))
                 break
@@ -196,7 +200,8 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
                     read_as_string = incorporate_barcode(read_as_string, contig, barcode)
                 
                 read_lists_for_barcodes[barcode].append(read_as_string)
-            
+
+        
 
     barcode_to_concatted_reads = {}
     if barcode_tag:
@@ -232,11 +237,14 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     return barcode_to_concatted_reads, total_reads, counts, time_reporting
         
 
-def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_folder, strandedness=0, barcode_tag="CB", barcode_whitelist=None, verbose=False, min_read_quality = 0):
+def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_folder, strandedness=0, barcode_tag="CB", barcode_whitelist=None, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):
     barcode_to_concatted_reads, total_reads, counts, time_reporting = find_edits(bampath, contig, split_index,
-                                                                         start, end, output_folder, barcode_tag=barcode_tag, strandedness=strandedness,
+                                                                         start, end, output_folder, barcode_tag=barcode_tag,
+                                                                                 strandedness=strandedness,
                                                                                  barcode_whitelist=barcode_whitelist, verbose=verbose,
-                                                                                 min_read_quality=min_read_quality
+                                                                                 min_read_quality=min_read_quality,
+                                                                                 min_base_quality=min_base_quality,
+                                                                                 dist_from_end=dist_from_end
                                                                                 )    
     return barcode_to_concatted_reads, total_reads, counts, time_reporting
     
@@ -248,7 +256,7 @@ import random
 def find_edits_and_split_bams_wrapper(parameters):
     try:
         start_time = time.perf_counter()
-        bampath, contig, split_index, start, end, output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality = parameters
+        bampath, contig, split_index, start, end, output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality, min_base_quality, dist_from_end = parameters
         label = '{}({}):{}-{}'.format(contig, split_index, start, end)
         
         barcode_to_concatted_reads, total_reads, counts, time_reporting = find_edits_and_split_bams(
@@ -262,7 +270,9 @@ def find_edits_and_split_bams_wrapper(parameters):
             barcode_tag=barcode_tag,
             barcode_whitelist=barcode_whitelist,
             verbose=verbose,
-            min_read_quality=min_read_quality
+            min_read_quality=min_read_quality,
+            min_base_quality=min_base_quality,
+            dist_from_end=dist_from_end
         )
         counts_df = pd.DataFrame.from_dict(counts)
         
@@ -306,15 +316,13 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined,
                             barcode_tag='CB',
                             paired_end=False, 
                             verbose=False,
-                            processes=16,
-                            filters=None,
+                            processes=16
                            ):
     coverage_counting_job_params = get_job_params_for_coverage_for_edits_in_contig(
         edit_info_grouped_per_contig_combined, 
         output_folder,
         barcode_tag=barcode_tag,
         paired_end=paired_end,
-        filters=filters,
         verbose=verbose
     )
     
@@ -343,12 +351,12 @@ def run_coverage_calculator(edit_info_grouped_per_contig_combined,
 
 
 def get_job_params_for_coverage_for_edits_in_contig(edit_info_grouped_per_contig_combined, output_folder,
-                                                    barcode_tag='CB', paired_end=False, filters=None, verbose=False):
+                                                    barcode_tag='CB', paired_end=False, verbose=False):
     job_params = []
     
     for contig, edit_info in edit_info_grouped_per_contig_combined.items():
                     
-        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, filters, verbose])  
+        job_params.append([edit_info, contig, output_folder, barcode_tag, paired_end, verbose])  
         
     return job_params
 
@@ -379,9 +387,6 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
         edit_info_df = pd.read_csv(edit_info_file, sep='\t')
         edit_info_df['contig'] = edit_info_df['contig'].astype(str)
         edit_info_df['position'] = edit_info_df['position'].astype(int)
-        edit_info_df['base_quality'] = edit_info_df['base_quality'].astype(int)
-        edit_info_df['mapping_quality'] = edit_info_df['mapping_quality'].astype(int)
-        edit_info_df['dist_from_end'] = edit_info_df['dist_from_end'].astype(int)
 
         edit_info = pl.from_pandas(edit_info_df) 
         
@@ -397,7 +402,7 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
             # For bulk data we don't have to do any filtering, the edits calculated for each split interval
             # can be paired directly with the split bam for that interval
             edit_info_grouped_per_contig["{}".format(split)].append(edit_info)
-        
+            
         del edit_info_df
 
     print("Done grouping! Concatenating ...")
@@ -444,7 +449,7 @@ def get_count_and_coverage_per_site(all_edit_info, skip_coverage=False):
 
 def generate_site_level_information(all_edit_info, skip_coverage=False):
     number_of_edits = len(all_edit_info)
-
+    
     all_edit_info = add_site_id(all_edit_info)
     
     if len(all_edit_info) == 0:
