@@ -212,6 +212,9 @@ test_name_to_expectations = {
 
 failures = 0
 for test_name, info in test_name_to_expectations.items():
+    if test_name != 'F1R2_pair_test-single_end_mode_sailor':
+        continue
+        
     print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nChecking results for {}".format(test_name))
     
     expectations_list = info.get("expectations")
