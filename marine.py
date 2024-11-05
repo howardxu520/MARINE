@@ -18,6 +18,7 @@ from tqdm import tqdm
 import tracemalloc
 from matplotlib import pyplot as plt
 import math
+import shlex
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
@@ -63,7 +64,7 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
             empty_df.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
             
     current, peak = tracemalloc.get_traced_memory()
-
+    
     with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
         f.write(f'sites\t{len(final_site_level_information_df)}\n') 
         f.write(f'peak_memory_mb\t{peak/1e6}\n') 
@@ -339,7 +340,7 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
     awk -v OFS='\\t' '{{print $1, $2-1, $3}}' "{file2_path}" > {output_folder}/depth_modified.tsv
 
     # Step 2: Sort the first file numerically by the join column (third column in final_edits)
-    sort -k3,3n "{file1_path}" > {output_folder}/final_edit_info_no_coverage_sorted.tsv
+    sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
 
     # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
 join -1 3 -2 2 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $1, $4, $5, $6, $7, $9}}' > "{output_file_path}"
@@ -440,9 +441,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
 
     
     logging_folder = "{}/metadata".format(output_folder)
-    make_folder(logging_folder)
 
-    with open('{}/manifest.txt'.format(logging_folder), 'w') as f:
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
         f.write('bam_filepath\t{}\n'.format(bam_filepath)) 
         f.write('annotation_bedfile_path\t{}\n'.format(annotation_bedfile_path))
         f.write('output_folder\t{}\n'.format(output_folder))  
@@ -686,6 +686,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
     # Check memory usage
     current, peak = tracemalloc.get_traced_memory()
 
+    logging_folder = "{}/metadata".format(output_folder)
     with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
         f.write(f'sites\t{len(final_site_level_information_df)}\n') 
         f.write(f'peak_memory_mb\t{peak/1e6}\n') 
@@ -780,7 +781,8 @@ if __name__ == '__main__':
     num_intervals_per_contig = args.num_intervals_per_contig
 
     num_per_sublist = args.num_per_sublist
-    
+
+
     # Convert bedgraphs argument into list of conversions
     if not bedgraphs is None:
         if barcode_tag in ['CB', 'IB']:
@@ -809,7 +811,20 @@ if __name__ == '__main__':
     if not os.path.exists(output_folder):
         pretty_print("{} (output folder) does not exist, making folder...".format(output_folder))
         os.mkdir(output_folder)
-        
+
+    
+    # Get the exact command line used to run this script
+    command_line = " ".join(shlex.quote(arg) for arg in sys.argv)
+    print('command: {}'.format(command_line))
+    # Define the path to your manifest file
+    manifest_file = "manifest.txt"
+    # Save the command to the manifest file
+    logging_folder = "{}/metadata".format(output_folder)
+    make_folder(logging_folder)
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f"command {command_line}\n")
+
+
     if cores is None:
         cores = 16
     pretty_print("Assuming {} cores available for multiprocessing. Set this to the number of available cores for optimal execution.".format(cores))
