@@ -23,13 +23,13 @@ get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes
 
 import os, psutil
 
-def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0):
+def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
 
     # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
     make_folder(edit_info_subfolder)
     
-    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag, barcode_whitelist, contigs, num_intervals_per_contig, verbose, min_read_quality, min_base_quality, dist_from_end)
+    edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag, barcode_whitelist, contigs, verbose, min_read_quality, min_base_quality, dist_from_end, interval_length=interval_length)
     pretty_print("{} total jobs".format(len(edit_finding_jobs)))
     
     # Performance statistics

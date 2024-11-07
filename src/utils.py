@@ -91,7 +91,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
     return contigs_to_write_bams_for
 
 
-def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):
+def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
     
     jobs = []
     
@@ -104,6 +104,7 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
         contigs_to_use = set(contig_lengths_dict.keys())
     else:
         contigs_to_use = set(contigs)
+    
     for contig in contig_lengths_dict.keys():
             
         if contig not in contigs_to_use:
@@ -112,7 +113,7 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
         pretty_print("\tContig {}".format(contig))
         
         contig_length = contig_lengths_dict.get(contig)
-        intervals_for_contig = get_intervals(contig, contig_lengths_dict, num_intervals_per_contig)
+        intervals_for_contig = get_intervals(contig, contig_lengths_dict, interval_length)
         #print('\t\tintervals_for_contig: {}'.format(intervals_for_contig))
         # Set up for pool
         for split_index, interval in enumerate(intervals_for_contig):
@@ -178,12 +179,15 @@ def pretty_print(contents, style=''):
             # Line after 
             pretty_print(styled_line)
     
-def get_intervals(contig, contig_lengths_dict, num_intervals=4):
+def get_intervals(contig, contig_lengths_dict, interval_length=2000000):
     """
-    Splits contig coordinates into a list of {num_intervals} coordinates of equal size.
+    Splits contig coordinates into a list of coordinates of equal size specified by interval length.
     """
     contig_length = contig_lengths_dict.get(contig)
-    interval_length = math.ceil(contig_length/num_intervals)
+
+    if interval_length > contig_length:
+        interval_length = contig_length
+    
     start = 0
     end = interval_length
 
@@ -197,6 +201,9 @@ def get_intervals(contig, contig_lengths_dict, num_intervals=4):
 
         start = end
         end = start + interval_length
+
+    print("\tContig {}: {} intervals of {} bases".format(contig, len(intervals), interval_length))
+
     return intervals
 
 
