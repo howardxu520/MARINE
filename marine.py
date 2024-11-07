@@ -95,10 +95,10 @@ def delete_intermediate_files(output_folder):
                 shutil.rmtree(object_path)
 
 
-def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], num_intervals_per_contig=16, 
-                verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0):
+def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[],
+                verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
     
-    pretty_print("Each contig is being split into {} subsets...".format(num_intervals_per_contig))
+    pretty_print("Each contig is being split into subsets of length...".format(interval_length))
     
     overall_label_to_list_of_contents, results, overall_time, overall_total_reads, \
     total_seconds_for_reads, counts_summary_df = run_edit_identifier(
@@ -108,12 +108,12 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
         barcode_tag=barcode_tag,
         barcode_whitelist=barcode_whitelist,
         contigs=contigs,
-        num_intervals_per_contig=num_intervals_per_contig, 
         verbose=verbose,
         cores=cores,
         min_read_quality=min_read_quality,
         min_base_quality=min_base_quality,
-        dist_from_end=dist_from_end
+        dist_from_end=dist_from_end,
+        interval_length=interval_length
     )
     
     #print(overall_label_to_list_of_contents.keys())
@@ -139,6 +139,7 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
 
 def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
                    verbose=False):
+    # Only used for single-cell and/or long read reconfiguration of bams to optimize coverage calculation
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
@@ -424,10 +425,10 @@ def get_edits_with_coverage_df(output_folder,
         
         
         
-def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_intervals_per_contig=16, strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor_list=[], min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
+def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor_list=[], min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
         keep_intermediate_files=False,
         num_per_sublist=6,
-        skip_coverage=False):
+        skip_coverage=False, interval_length=2000000):
     
     print_marine_logo()
     
@@ -450,7 +451,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
         f.write('barcode_tag\t{}\n'.format(barcode_tag))  
         f.write('barcode_whitelist_file\t{}\n'.format(barcode_whitelist_file))  
         f.write('contigs\t{}\n'.format(contigs))  
-        f.write('num_intervals_per_contig\t{}\n'.format(num_intervals_per_contig))  
+        f.write('interval_length\t{}\n'.format(interval_length))  
         f.write('verbose\t{}\n'.format(verbose))
         f.write('cores\t{}\n'.format(cores))
         f.write('number_of_expected_bams\t{}\n'.format(number_of_expected_bams))
@@ -496,12 +497,12 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], num_in
                 barcode_tag,
                 barcode_whitelist,
                 subcontig_list,
-                num_intervals_per_contig,
                 verbose,
                 cores=cores,
                 min_read_quality=min_read_quality,
                 min_base_quality=min_base_quality,
-                dist_from_end=min_dist_from_end
+                dist_from_end=min_dist_from_end,
+                interval_length=interval_length
             )
 
             for k,v in counts_summary_df.items():
@@ -749,7 +750,8 @@ if __name__ == '__main__':
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
-    parser.add_argument('--num_intervals_per_contig', type=int, default=200, help='Intervals to split analysis into... more intervals can yield faster perforamance especially with multiple cores')
+    parser.add_argument('--num_intervals_per_contig', type=int, default=200, help='Deprecated')
+    parser.add_argument('--interval_length', type=int, default=2000000, help='Length of intervals split analysis into...')
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
@@ -779,7 +781,7 @@ if __name__ == '__main__':
     max_edits_per_read = args.max_edits_per_read
     
     num_intervals_per_contig = args.num_intervals_per_contig
-
+    interval_length = args.interval_length
     num_per_sublist = args.num_per_sublist
 
 
@@ -850,7 +852,7 @@ if __name__ == '__main__':
                   "\tMinimum distance from end:\t{}".format(min_dist_from_end),
                   "\tMaximum edits per read:\t{}".format(max_edits_per_read),
                   "\tContigs:\t{}".format(contigs),
-                  "\tNumber of intervals:\t{}".format(num_intervals_per_contig),
+                  "\tInterval length:\t{}".format(interval_length),
                   "\tCores:\t{}".format(cores),
                   "\tVerbose:\t{}".format(verbose),
                   "\tKeep intermediate files:\t{}".format(keep_intermediate_files),
@@ -879,7 +881,6 @@ if __name__ == '__main__':
         barcode_tag=barcode_tag,
         paired_end=paired_end,
         barcode_whitelist_file=barcode_whitelist_file,
-        num_intervals_per_contig=num_intervals_per_contig,
         coverage_only=coverage_only,
         filtering_only=filtering_only,
         annotation_only=annotation_only,
@@ -891,10 +892,10 @@ if __name__ == '__main__':
         max_edits_per_read = max_edits_per_read,
         cores = cores,
         verbose = verbose,
-        number_of_expected_bams=num_intervals_per_contig,
         skip_coverage=skip_coverage,
         keep_intermediate_files=keep_intermediate_files,
-        num_per_sublist=num_per_sublist
+        num_per_sublist=num_per_sublist,
+        interval_length=interval_length
        )
     
     
