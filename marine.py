@@ -338,8 +338,8 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
     # Generate the Bash command for processing
     bash_command = f"""#!/bin/bash
     # Step 1: Adjust the third column of depths by subtracting 1 and convert to tab-separated format
-    awk -v OFS='\\t' '{{print $1, $2-1, $3}}' "{file2_path}" > {output_folder}/depth_modified.tsv
-
+    awk -v OFS='\\t' '{{print $1, $2-1, $3}}' "{file2_path}" | sort -k2,2n | uniq > {output_folder}/depth_modified.tsv
+    
     # Step 2: Sort the first file numerically by the join column (third column in final_edits)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
 
@@ -364,21 +364,31 @@ join -1 3 -2 2 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv 
     print(f"Merged file saved to {output_file_path}")
 
 
-def generate_depths_with_samtools(output_folder, bam_filepath):
+def generate_depths_with_samtools(output_folder, bam_filepaths):
     coverage_start_time = time.perf_counter()
 
-    depth_command = (
-    "echo 'concatenating bed file...';"
-    "for file in {}/edit_info/*edit_info.tsv; do "
-    "awk 'NR > 1 {{print $2, $3, $3+1}}' OFS='\t' \"$file\"; "
-    "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
-    "echo 'running samtools depth...';"
-    "samtools depth -b {}/combined.bed {} > {}/coverage/depths.txt"
-).format(output_folder, output_folder, output_folder, bam_filepath, output_folder)
+    all_depth_commands = []
 
+    combine_edit_sites_command = (
+        "echo 'concatenating bed file...';"
+        "for file in {}/edit_info/*edit_info.tsv; do "
+        "awk 'NR > 1 {{print $2, $3, $3+1}}' OFS='\t' \"$file\"; "
+        "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
+    ).format(output_folder, output_folder)
+    
+    all_depth_commands.append(combine_edit_sites_command)
+    
+    for i, bam_filepath in enumerate(bam_filepaths):
+        depth_command = (
+        "echo 'running samtools depth...';"
+        "samtools depth -b {}/combined.bed {} >> {}/coverage/depths.txt"
+    ).format(output_folder, bam_filepath, output_folder)
+        all_depth_commands.append(depth_command)
+        
     depth_bash = '{}/depth_command.sh'.format(output_folder)
     with open(depth_bash, 'w') as f:
-        f.write(depth_command)
+        for depth_command in all_depth_commands:
+            f.write('{}\n\n'.format(depth_command))
         
     print("Calculating depths...")
     subprocess.run(['bash', depth_bash])
@@ -540,7 +550,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
         
-        if barcode_tag or paired_end:
+        if paired_end:
             results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                    barcode_tag=barcode_tag, 
                                                                                    paired_end=paired_end,
@@ -551,9 +561,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                                                                                    bam_filepath=bam_filepath
                                                                                   )
         else:
-            # for bulk single-end, we will just concatenate all the edits files into one big bed file, and then run samtools depth
-            total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, bam_filepath)
-
+            # for bulk single-end or single-cell, we will just concatenate all the edits files into one big bed file, and then run samtools depth
+            if not barcode_tag:
+                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, [bam_filepath])
+            elif barcode_tag:
+                # for single-end, we want to run the samtools depth command for everyone of the reconfigured bam files
+                reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+                print("Running samtools depth on {} reconfigured bam paths...".format(len(reconfigured_bam_filepaths)))
+                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, reconfigured_bam_filepaths)
+                                                  
+                
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
          
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))

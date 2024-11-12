@@ -12,9 +12,8 @@ $MARINE/tests/singlecell_tests/only_5_cells_test \
 --min_base_quality \
 0 \
 --cores \
-16 \
+4 \
 --barcode_tag "CB" \
 --strandedness 2 \
 --contigs "9" \
---num_intervals_per_contig 16 \
---keep_intermediate_files
+--keep_intermediate_files --interval_length 32000000
