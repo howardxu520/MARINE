@@ -222,7 +222,7 @@ def write_rows_to_info_file(list_of_rows, f):
         f.write(info_line)
         
 def write_header_to_edit_info(f):
-    f.write('barcode\tcontig\tposition\tref\talt\tread_id\tstrand\n')
+    f.write('barcode\tcontig\t\tcontig_position\tposition\tref\talt\tread_id\tstrand\n')
     
 def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path, samfile_template):
     bam_for_barcode = bam_handles_for_barcodes.get(barcode_bam_file_path)

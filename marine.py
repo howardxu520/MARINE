@@ -39,8 +39,8 @@ from annotate import annotate_sites, get_strand_specific_conversion
 
 def zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder):
     print("No edits found.")
-    Sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
-    sites_empty_df = pd.DataFrame(columns=Sites_columns)
+    sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
+    sites_empty_df = pd.DataFrame(columns=sites_columns)
     sites_empty_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), sep='\t', index=False)
 
     Annotated_sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion','feature_name','feature_type','feature_strand']
@@ -83,8 +83,9 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
 
 def delete_intermediate_files(output_folder):
     to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
-                 'concat_command.sh', 'depth_command.sh', 'combined.bed',
-                 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
+                 'concat_command.sh', 'depth_command.sh', 'combined.bed', 'merge_command.sh',
+                 'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
+                 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
     for object in to_delete:
         object_path = '{}/{}'.format(output_folder, object)
 
@@ -337,20 +338,18 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
 
     # Generate the Bash command for processing
     bash_command = f"""#!/bin/bash
-    # Step 1: Adjust the third column of depths by subtracting 1 and convert to tab-separated format
-    awk -v OFS='\\t' '{{print $1, $2-1, $3}}' "{file2_path}" | sort -k2,2n | uniq > {output_folder}/depth_modified.tsv
+    # Step 1: Adjust the third column of depths by subtracting 1, add a new column that incorporates both contig and position
+    # for join purposes, and sort by this column. Output in tab-separated format.
+    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2-1)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
     
-    # Step 2: Sort the first file numerically by the join column (third column in final_edits)
+    # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
 
     # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
-join -1 3 -2 2 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $1, $4, $5, $6, $7, $9}}' > "{output_file_path}"
+join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $4, $5, $6, $7, $8, $11}}' > "{output_file_path}"
 
     # Step 4: Add header to the output file
     echo -e "{header}" | cat - "{output_file_path}" > temp && mv temp "{output_file_path}"
-    
-    # Cleanup temporary files
-    #rm temp_file1_sorted.tsv temp_file2_modified.tsv temp_file2_sorted.tsv
     """
 
     # Write the command to a shell script
@@ -372,7 +371,7 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
     combine_edit_sites_command = (
         "echo 'concatenating bed file...';"
         "for file in {}/edit_info/*edit_info.tsv; do "
-        "awk 'NR > 1 {{print $2, $3, $3+1}}' OFS='\t' \"$file\"; "
+        "awk 'NR > 1 {{print $2, $4, $4+1}}' OFS='\t' \"$file\"; "
         "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
     ).format(output_folder, output_folder)
     
@@ -417,8 +416,8 @@ def get_edits_with_coverage_df(output_folder,
                                barcode_tag=None, 
                                paired_end=False):
 
-    # For single-cell or paired end, which was calculated using the pysam coverage functions.
-    if barcode_tag or paired_end:
+    # For paired end, which was calculated using the pysam coverage functions.
+    if paired_end:
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      index_col=0,
                                                                      names=[
@@ -428,9 +427,17 @@ def get_edits_with_coverage_df(output_folder,
                                                                                              'contig': str})
 
     else:
+        # For bulk single-end or for single-cell, for which coverages were calculated using samtools depth.
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      dtype={'coverage': int, 'position': int,
                                                                                              'contig': str})
+        # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
+        # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
+        # as the barcode information is separately already present as it's own column in this dataframe.
+        if barcode_tag:
+            # Replace the contig with the part before the barcode
+            all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
+
     return all_edit_info_unique_position_with_coverage_df
         
         

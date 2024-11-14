@@ -227,21 +227,27 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
         
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
-        if distance_from_read_end >= dist_from_end and int(qual) >= min_base_quality:
+        if distance_from_read_end < dist_from_end:
+            return 'read_end_proximal'.format(dist_from_end), [], {}
 
-            # If we have been provided with a barcode CB (single-cell), we need to preset our contigs to match
-            # the contigs that will be present in the reconfigured bams, ie. 9_GATCCCTCAGTAACGG-1 instead of 9.
+        if int(qual) < min_base_quality:
+            return 'baseq_low'.format(min_base_quality), [], {}
+            
+        # If we have been provided with a barcode CB (single-cell), we need to preset our contigs to match
+        # the contigs that will be present in the reconfigured bams, ie. 9_GATCCCTCAGTAACGG-1 instead of 9.
 
-            if read_barcode:
-                adjusted_contig = "{}_{}".format(str(contig), read_barcode)
-            else:
-                adjusted_contig = contig
-                
-            list_of_rows.append([
-                read_barcode, str(adjusted_contig), str(updated_position), ref, alt, read_id, reverse_or_forward
-            ])
+        if read_barcode:
+            adjusted_contig = "{}_{}".format(str(contig), read_barcode)
+        else:
+            adjusted_contig = contig
+
+        contig_position_identity = str(adjusted_contig) + ':' + str(updated_position)
         
-            num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
+        list_of_rows.append([
+            read_barcode, str(adjusted_contig), contig_position_identity, str(updated_position), ref, alt, read_id, reverse_or_forward
+        ])
+    
+        num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
         
                   
     return None, list_of_rows, num_edits_of_each_type
