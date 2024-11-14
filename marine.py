@@ -549,6 +549,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         for k, v in overall_counts_summary_df.items():
             f.write(f'{k}\t{v}\n') 
 
+        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get('total_edits')/overall_total_reads_processed}\n')
+
     if not filtering_only and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
