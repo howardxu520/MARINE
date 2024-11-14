@@ -236,7 +236,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
         # If we have been provided with a barcode CB (single-cell), we need to preset our contigs to match
         # the contigs that will be present in the reconfigured bams, ie. 9_GATCCCTCAGTAACGG-1 instead of 9.
 
-        if read_barcode:
+        if barcode_tag:
             adjusted_contig = "{}_{}".format(str(contig), read_barcode)
         else:
             adjusted_contig = contig

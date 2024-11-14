@@ -17,5 +17,4 @@ $MARINE/tests/strandedness_tests/tax1bp3_chr17_3665556_test \
 --strandedness 2 \
 --contigs "chr17" \
 --sailor \
---verbose \
 --num_intervals_per_contig 16

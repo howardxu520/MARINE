@@ -17,5 +17,4 @@ $MARINE/tests/strandedness_tests/F1R2_pair_test-single_end_mode_sailor \
 --strandedness 2 \
 --contigs "chr17" \
 --sailor "CT,AG" \
---verbose \
 --num_intervals_per_contig 4
