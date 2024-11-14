@@ -16,4 +16,4 @@ $MARINE/tests/strandedness_tests/unstranded_pair_test \
 --paired_end \
 --strandedness 0 \
 --sailor --bedgraphs "CT" \
---num_intervals_per_contig 1
+--num_intervals_per_contig 1 --keep_intermediate_files

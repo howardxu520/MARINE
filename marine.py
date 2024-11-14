@@ -379,9 +379,9 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
     
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
-        "echo 'running samtools depth...';"
+        "echo 'running samtools depth on {}...';"
         "samtools depth -b {}/combined.bed {} >> {}/coverage/depths.txt"
-    ).format(output_folder, bam_filepath, output_folder)
+    ).format(bam_filepath, output_folder, bam_filepath, output_folder)
         all_depth_commands.append(depth_command)
         
     depth_bash = '{}/depth_command.sh'.format(output_folder)
@@ -421,7 +421,7 @@ def get_edits_with_coverage_df(output_folder,
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      index_col=0,
                                                                      names=[
-                                                                         'barcode_position_index', 'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
+                                                                         'barcode_position_index', 'barcode', 'contig', 'contig_position', 'position', 'ref', 'alt', 'read_id',
                                                                          'strand', 'barcode_position', 
                                                                          'coverage', 'source', 'position_barcode'], dtype={'coverage': int, 'position': int,
                                                                                              'contig': str})
@@ -431,12 +431,14 @@ def get_edits_with_coverage_df(output_folder,
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      dtype={'coverage': int, 'position': int,
                                                                                              'contig': str})
-        # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
-        # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
-        # as the barcode information is separately already present as it's own column in this dataframe.
-        if barcode_tag:
-            # Replace the contig with the part before the barcode
-            all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
+    
+    # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
+    # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
+    # as the barcode information is separately already present as it's own column in this dataframe. To ensure code continuity,
+    # this will still be true even with no barcode specified, in which case the contig will be <contig>_no_barcode
+    
+    # Therefore: replace the contig with the part before the barcode
+    all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
 
     return all_edit_info_unique_position_with_coverage_df
         
@@ -549,7 +551,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         for k, v in overall_counts_summary_df.items():
             f.write(f'{k}\t{v}\n') 
 
-        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get('total_edits')/overall_total_reads_processed}\n')
+        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
 
     if not filtering_only and not skip_coverage:
         # Coverage calculation
