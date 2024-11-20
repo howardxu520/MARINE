@@ -20,6 +20,8 @@ from matplotlib import pyplot as plt
 import math
 import shlex
 
+# checkpoint 
+
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
