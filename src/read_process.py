@@ -189,7 +189,8 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
     if read.is_duplicate:
         return 'is_duplicate', [], {}
     
-    
+    if read.is_supplementary:
+        return 'is_supplementary', [], {}
     #if 'N' in cigarstring:
     #    return 'N', [], {}
     

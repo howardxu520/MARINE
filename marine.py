@@ -380,7 +380,7 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
         "echo 'running samtools depth on {}...';"
-        "samtools depth -b {}/combined.bed {} >> {}/coverage/depths.txt"
+        "samtools depth -a -g 0x704 -b {}/combined.bed {} >> {}/coverage/depths.txt"
     ).format(bam_filepath, output_folder, bam_filepath, output_folder)
         all_depth_commands.append(depth_command)
         
@@ -888,7 +888,7 @@ if __name__ == '__main__':
                   "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist)
                  ])
 
-    if not barcode_tag and not paired_end:
+    if not paired_end:
         # Check to see that samtools is available in the environment
         check_samtools()
 
