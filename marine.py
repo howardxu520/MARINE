@@ -195,8 +195,8 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                                       number_of_expected_bams=number_of_expected_bams
                                                                                      )
     
-    if verbose:
-        print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
+    #if verbose:
+    #    print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
 
         
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
@@ -338,9 +338,9 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
 
     # Generate the Bash command for processing
     bash_command = f"""#!/bin/bash
-    # Step 1: Adjust the third column of depths by subtracting 1, add a new column that incorporates both contig and position
+    # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
     # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2-1)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
+    awk -v OFS='\\t' '{{print $1, $2, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
     
     # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
@@ -371,7 +371,7 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
     combine_edit_sites_command = (
         "echo 'concatenating bed file...';"
         "for file in {}/edit_info/*edit_info.tsv; do "
-        "awk 'NR > 1 {{print $2, $4, $4+1}}' OFS='\t' \"$file\"; "
+        "awk 'NR > 1 {{print $2, $4-1, $4}}' OFS='\t' \"$file\"; "
         "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
     ).format(output_folder, output_folder)
     
@@ -380,7 +380,7 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
         "echo 'running samtools depth on {}...';"
-        "samtools depth -a -g 0x704 -b {}/combined.bed {} >> {}/coverage/depths.txt"
+        "samtools depth -a -b {}/combined.bed {} >> {}/coverage/depths.txt"
     ).format(bam_filepath, output_folder, bam_filepath, output_folder)
         all_depth_commands.append(depth_command)
         

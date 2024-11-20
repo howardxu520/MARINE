@@ -482,11 +482,11 @@ def get_edit_information_wrapper(read, hamming_check=False, verbose=False):
     reference_seq = read.get_reference_sequence().lower()
     
     if verbose:
-        print("MD tag:", md_tag)
-        print("CIGAR string", cigarstring)
-        print("Reference seq:", reference_seq.upper())
-        print("Aligned seq:", aligned_seq)
-        print("Qualities:", query_qualities)
+        print("MD tag:\n\t", md_tag)
+        print("CIGAR string\n\t", cigarstring)
+        print("Reference seq:\n\t", reference_seq.upper())
+        print("Aligned seq:\n\t", aligned_seq)
+        print("Qualities:\n\t", query_qualities)
     
     return(get_edit_information(md_tag,
                                 cigar_tuples, 

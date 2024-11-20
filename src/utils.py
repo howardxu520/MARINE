@@ -98,8 +98,9 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
     samfile = pysam.AlignmentFile(bampath, "rb")
     contig_lengths_dict = get_contig_lengths_dict(samfile)
 
-    if verbose:
-        print('contig_lengths_dict:{}'.format(contig_lengths_dict))
+    #if verbose:
+    #    print('contig_lengths_dict:{}'.format(contig_lengths_dict))
+    
     if len(contigs) == 0:
         contigs_to_use = set(contig_lengths_dict.keys())
     else:
