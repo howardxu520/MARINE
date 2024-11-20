@@ -2,6 +2,36 @@ import pandas as pd
 import sys
 
 test_name_to_expectations = {
+    "edge_case_test": {
+        "folder": "singlecell_tests",
+        "expectations": [{
+            "contig": "10",
+            "barcode": 	"AAACGAATCATTCATC-1",
+            "position": 132330481,
+            "num_rows": 1,
+            "count": 1,
+            "coverage": 1,
+            "conversion": "T>G",
+            "strand_conversion": "A>C",
+            "strand": "-",
+            "feature_name": "STK32C",
+            "feature_strand": "-"
+        },
+        {
+            "contig": "10",
+            "barcode": 	"AAACGAATCATTCATC-1",
+            "position": 132330438,
+            "num_rows": 1,
+            "count": 1,
+            "coverage": 1,
+            "conversion": "T>C",
+            "strand_conversion": "A>G",
+            "strand": "-",
+            "feature_name": "STK32C",
+            "feature_strand": "-"
+        }
+                        ]
+    },
     "unstranded_pair_test": {
         "folder": "strandedness_tests",
         "expectations": [{
@@ -132,7 +162,7 @@ test_name_to_expectations = {
         }]
     },
 
-        "only_5_cells_test": {
+    "only_5_cells_test": {
         "folder": "singlecell_tests",
         "expectations": [{
             "contig": "9",
