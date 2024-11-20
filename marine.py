@@ -340,7 +340,7 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
     bash_command = f"""#!/bin/bash
     # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
     # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
+    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
     
     # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
@@ -448,17 +448,10 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         keep_intermediate_files=False,
         num_per_sublist=6,
         skip_coverage=False, interval_length=2000000):
-    
-    print_marine_logo()
-    
+        
     # Check to make sure the folder is empty, otherwise prompt for overwriting
-    # Getting the list of directories 
-    dir = os.listdir(output_folder) 
-      
-    # Checking if the list is empty or not 
-    if len(dir) > 0: 
-        pretty_print("WARNING {} is not empty".format(output_folder), style="^") 
-
+    if any(os.scandir(output_folder)):
+        pretty_print("WARNING: {} is not empty".format(output_folder), style="^")
     
     logging_folder = "{}/metadata".format(output_folder)
 
@@ -861,7 +854,9 @@ if __name__ == '__main__':
    
     
     assert(not(coverage_only and filtering_only))
-    
+
+    print_marine_logo()
+
     pretty_print(["Arguments:",
                   "\tBAM filepath:\t{}".format(bam_filepath), 
                   "\tAnnotation bedfile filepath:\t{}".format(annotation_bedfile_path),

@@ -240,6 +240,7 @@ test_name_to_expectations = {
 
 }
 
+# Check results of each test
 failures = 0
 for test_name, info in test_name_to_expectations.items():        
     print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nChecking results for {}".format(test_name))
@@ -288,6 +289,39 @@ for test_name, info in test_name_to_expectations.items():
         else:
             print("\n\t ~~~ {} FAILED! ~~~\n".format(test_name))
             failures += 1
+
+
+# Single-cell vs bulk processing check for same single-cell dataset 
+sc_folder = 'only_5_cells_test'
+bulk_folder = 'only_5_cells_bulk_mode_test'
+sc_5_cells = pd.read_csv('singlecell_tests/{}/final_filtered_site_info.tsv'.format(sc_folder), sep='\t').sort_values(['position', 'strand_conversion'])
+bulk_5_cells = pd.read_csv('singlecell_tests/{}/final_filtered_site_info.tsv'.format(bulk_folder), sep='\t').sort_values(['position', 'strand_conversion'])
+print("Checking that analyzing a single-cell dataset in 'bulk' mode (i.e. not specificying the 'CB' barcode) yields the exact same positions and base changes, but with counts and coverages aggregated rather than at a single-cell resolution")
+grouped_sc = pd.DataFrame(sc_5_cells.groupby(['contig', 'position', 'strand_conversion']).agg({'count': sum, 'strand_conversion': 'unique'}))
+grouped_sc.index.names = ['contig', 'position', 'c']
+grouped_sc['strand_conversion'] = [i[0] for i in grouped_sc['strand_conversion']]
+grouped_sc = grouped_sc.sort_values(['position', 'strand_conversion'])
+
+grouped_sc_rows = []
+for r in grouped_sc.iterrows():
+    grouped_sc_rows.append(r[0])
+
+bulk_rows = []
+for r in bulk_5_cells.iterrows():
+    r = r[1]
+    bulk_rows.append((r['contig'], r['position'], r['strand_conversion']))
+
+try:
+    assert(grouped_sc_rows == bulk_rows)
+    for bulk_item, grouped_sc_item in zip(bulk_rows, grouped_sc_rows):
+        assert(bulk_item == grouped_sc_item)
+    assert(len(grouped_sc_rows) == len(bulk_rows))
+    print("\n\t >>> single-cell and bulk on same dataset comparison passed! <<<\n")
+except Exception as e:
+    print("Exception: {}".format(e))
+    print("\n\t ~~~ single cell vs bulk modes on sc dataset equivalency test FAILED! ~~~\n")
+    failures += 1
+
 
 print("There were {} failures".format(failures))
 if failures > 0:
