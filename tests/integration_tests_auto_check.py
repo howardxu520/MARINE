@@ -290,14 +290,21 @@ for test_name, info in test_name_to_expectations.items():
             print("\n\t ~~~ {} FAILED! ~~~\n".format(test_name))
             failures += 1
 
+import os
+from glob import glob
 
 tests_dir = sys.argv[1]
 print('tests dir is {}'.format(tests_dir))
 # Single-cell vs bulk processing check for same single-cell dataset 
-sc_folder = 'only_5_cells_test'
-bulk_folder = 'only_5_cells_bulk_mode_test'
-sc_5_cells = pd.read_csv('{}/singlecell_tests/{}/final_filtered_site_info.tsv'.format(tests_dir, sc_folder), sep='\t').sort_values(['position', 'strand_conversion'])
-bulk_5_cells = pd.read_csv('{}/singlecell_tests/{}/final_filtered_site_info.tsv'.format(tests_dir, bulk_folder), sep='\t').sort_values(['position', 'strand_conversion'])
+sc_5_cells_path = "singlecell_tests/only_5_cells_test/final_filtered_site_info.tsv"
+bulk_5_cells_path = "singlecell_tests/only_5_cells_bulk_mode_test/final_filtered_site_info.tsv"
+
+print("Current directory: {}".format(os.getcwd()))
+print("\tMatching files: {}".format(glob('singlecell_tests/only_5*/*final_filtered_site_info.tsv')))
+
+sc_5_cells = pd.read_csv(sc_5_cells_path, sep='\t').sort_values(['position', 'strand_conversion'])
+bulk_5_cells = pd.read_csv(bulk_5_cells_path, sep='\t').sort_values(['position', 'strand_conversion'])
+
 print("Checking that analyzing a single-cell dataset in 'bulk' mode (i.e. not specificying the 'CB' barcode) yields the exact same positions and base changes, but with counts and coverages aggregated rather than at a single-cell resolution")
 grouped_sc = pd.DataFrame(sc_5_cells.groupby(['contig', 'position', 'strand_conversion']).agg({'count': sum, 'strand_conversion': 'unique'}))
 grouped_sc.index.names = ['contig', 'position', 'c']
