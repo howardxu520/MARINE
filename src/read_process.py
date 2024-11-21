@@ -131,7 +131,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
     is_read1 = read.is_read1
     is_read2 = read.is_read2
 
-    if barcode_tag:
+    if read.has_tag('CB'): # ie == 'CB'
         # Assuming R2 from 10x data contains the seqence 
         is_read1 = False
         is_read2 = True
