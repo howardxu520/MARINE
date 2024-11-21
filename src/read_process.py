@@ -229,10 +229,10 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
         if distance_from_read_end < dist_from_end:
-            return 'read_end_proximal'.format(dist_from_end), [], {}
+            continue
 
         if int(qual) < min_base_quality:
-            return 'baseq_low'.format(min_base_quality), [], {}
+            continue
             
         # If we have been provided with a barcode CB (single-cell), we need to preset our contigs to match
         # the contigs that will be present in the reconfigured bams, ie. 9_GATCCCTCAGTAACGG-1 instead of 9.

@@ -9,7 +9,7 @@ import sys
 from collections import OrderedDict, defaultdict
 from itertools import product
 
-cb_n = 3
+cb_n = 2
 
 def generate_permutations_list_for_CB(n):
     """

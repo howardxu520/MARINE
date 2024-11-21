@@ -5,8 +5,9 @@ from glob import glob
 
 
 test_name_to_expectations = {
-    "edge_case_test": {
+"edge_case_test": {
         "folder": "singlecell_tests",
+        "total_edit_sites": 2,
         "expectations": [{
             "contig": "10",
             "barcode": 	"AAACGAATCATTCATC-1",
@@ -32,8 +33,24 @@ test_name_to_expectations = {
             "strand": "-",
             "feature_name": "STK32C",
             "feature_strand": "-"
-        }
-                        ]
+        }]
+    },
+    "edge_case_filter_dist_test": {
+        "folder": "singlecell_tests",
+        "total_edit_sites": 1,
+        "expectations": [{
+            "contig": "10",
+            "barcode": 	"AAACGAATCATTCATC-1",
+            "position": 132330438,
+            "num_rows": 1,
+            "count": 1,
+            "coverage": 1,
+            "conversion": "T>C",
+            "strand_conversion": "A>G",
+            "strand": "-",
+            "feature_name": "STK32C",
+            "feature_strand": "-"
+        }]
     },
     "unstranded_pair_test": {
         "folder": "strandedness_tests",
@@ -245,34 +262,45 @@ test_name_to_expectations = {
 
 print("Current directory: {}".format(os.getcwd()))
 
-# Check results of each test
+# Check out results of each test
 failures = 0
-for test_name, info in test_name_to_expectations.items():        
+for test_name, info in test_name_to_expectations.items():
     print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nChecking results for {}".format(test_name))
-    
+
+    failure = False
+
+    folder = info.get("folder")
+    final_filtered_site_info_annotated = "{}/{}/final_filtered_site_info_annotated.tsv".format(folder, test_name)
+    final_filtered_site_info_annotated_df = pd.read_csv(final_filtered_site_info_annotated, sep='\t', index_col=0)
+
+    if "total_edit_sites" in info:
+        try:
+            assert(len(final_filtered_site_info_annotated_df) == info.get("total_edit_sites"))
+            print("\n   >>> Found {} edits total, as expected <<<\n".format(info.get("total_edit_sites")))
+        except Exception as e:
+            print("Exception:\n\tNum total rows in final_filtered_site_info_annotated.tsv expected: {}, was {}".format(info.get("total_edit_sites"), len(final_filtered_site_info_annotated_df)))
+            failure = True 
+            failures += 1
+            continue 
+            
     expectations_list = info.get("expectations")
     for expectations in expectations_list:
+        failure = False
         print("\tExpecting: {}".format(expectations))
-    
-              
-        folder = info.get("folder")
         
         contig = expectations.get("contig")
         barcode = expectations.get("barcode", None)
         
         position = expectations.get("position")
         
-        final_filtered_site_info_annotated = "{}/{}/final_filtered_site_info_annotated.tsv".format(folder, test_name)
-        final_filtered_site_info_annotated_df = pd.read_csv(final_filtered_site_info_annotated, sep='\t', index_col=0)
-    
         row_of_interest = final_filtered_site_info_annotated_df[
             (final_filtered_site_info_annotated_df['position'] == position) &\
             (final_filtered_site_info_annotated_df['contig'].astype(str) == contig)
         ]
     
-    
         if barcode:
             row_of_interest = row_of_interest[row_of_interest.barcode == barcode]
+    
     
         failure = False
         try:
