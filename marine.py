@@ -490,7 +490,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             # Take care of the case where no contigs are specified, so that all contigs available are processed
             broken_up_contigs = [[]]
         else:
-            if barcode_whitelist_file:
+            if barcode_tag:
                 # For single cell sequencing we will only process this many contigs at a time
                 broken_up_contigs = get_broken_up_contigs(contigs, num_per_sublist)
                     

@@ -1,5 +1,8 @@
 import pandas as pd
 import sys
+import os
+from glob import glob
+
 
 test_name_to_expectations = {
     "edge_case_test": {
@@ -292,8 +295,7 @@ for test_name, info in test_name_to_expectations.items():
             print("\n\t ~~~ {} FAILED! ~~~\n".format(test_name))
             failures += 1
 
-import os
-from glob import glob
+
 
 tests_dir = sys.argv[1]
 print('tests dir is {}'.format(tests_dir))
