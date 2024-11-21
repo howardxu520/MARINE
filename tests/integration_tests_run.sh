@@ -48,7 +48,7 @@ done
 
 
 echo "Checking results..."
-$mypython $MARINE/tests/integration_tests_auto_check.py $MARINE/tests
+$mypython $MARINE/tests/integration_tests_auto_check.py tests
 
 exitcode=$?
 
