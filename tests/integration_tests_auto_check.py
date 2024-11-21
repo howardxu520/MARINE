@@ -240,6 +240,8 @@ test_name_to_expectations = {
 
 }
 
+print("Current directory: {}".format(os.getcwd()))
+
 # Check results of each test
 failures = 0
 for test_name, info in test_name_to_expectations.items():        
