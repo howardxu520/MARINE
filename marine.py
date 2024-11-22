@@ -20,6 +20,8 @@ from matplotlib import pyplot as plt
 import math
 import shlex
 
+# checkpoint 
+
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'))
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
@@ -39,8 +41,8 @@ from annotate import annotate_sites, get_strand_specific_conversion
 
 def zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder):
     print("No edits found.")
-    Sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
-    sites_empty_df = pd.DataFrame(columns=Sites_columns)
+    sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
+    sites_empty_df = pd.DataFrame(columns=sites_columns)
     sites_empty_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), sep='\t', index=False)
 
     Annotated_sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion','feature_name','feature_type','feature_strand']
@@ -83,8 +85,9 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
 
 def delete_intermediate_files(output_folder):
     to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
-                 'concat_command.sh', 'depth_command.sh', 'combined.bed',
-                 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
+                 'concat_command.sh', 'depth_command.sh', 'combined.bed', 'merge_command.sh',
+                 'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
+                 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
     for object in to_delete:
         object_path = '{}/{}'.format(output_folder, object)
 
@@ -194,8 +197,8 @@ def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbo
                                                                                       number_of_expected_bams=number_of_expected_bams
                                                                                      )
     
-    if verbose:
-        print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
+    #if verbose:
+    #    print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
 
         
     results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
@@ -337,20 +340,18 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
 
     # Generate the Bash command for processing
     bash_command = f"""#!/bin/bash
-    # Step 1: Adjust the third column of depths by subtracting 1 and convert to tab-separated format
-    awk -v OFS='\\t' '{{print $1, $2-1, $3}}' "{file2_path}" > {output_folder}/depth_modified.tsv
-
-    # Step 2: Sort the first file numerically by the join column (third column in final_edits)
+    # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
+    # for join purposes, and sort by this column. Output in tab-separated format.
+    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
+    
+    # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
 
     # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
-join -1 3 -2 2 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $1, $4, $5, $6, $7, $9}}' > "{output_file_path}"
+join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $4, $5, $6, $7, $8, $11}}' > "{output_file_path}"
 
     # Step 4: Add header to the output file
     echo -e "{header}" | cat - "{output_file_path}" > temp && mv temp "{output_file_path}"
-    
-    # Cleanup temporary files
-    #rm temp_file1_sorted.tsv temp_file2_modified.tsv temp_file2_sorted.tsv
     """
 
     # Write the command to a shell script
@@ -364,21 +365,31 @@ join -1 3 -2 2 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv 
     print(f"Merged file saved to {output_file_path}")
 
 
-def generate_depths_with_samtools(output_folder, bam_filepath):
+def generate_depths_with_samtools(output_folder, bam_filepaths):
     coverage_start_time = time.perf_counter()
 
-    depth_command = (
-    "echo 'concatenating bed file...';"
-    "for file in {}/edit_info/*edit_info.tsv; do "
-    "awk 'NR > 1 {{print $2, $3, $3+1}}' OFS='\t' \"$file\"; "
-    "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
-    "echo 'running samtools depth...';"
-    "samtools depth -b {}/combined.bed {} > {}/coverage/depths.txt"
-).format(output_folder, output_folder, output_folder, bam_filepath, output_folder)
+    all_depth_commands = []
 
+    combine_edit_sites_command = (
+        "echo 'concatenating bed file...';"
+        "for file in {}/edit_info/*edit_info.tsv; do "
+        "awk 'NR > 1 {{print $2, $4-1, $4}}' OFS='\t' \"$file\"; "
+        "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
+    ).format(output_folder, output_folder)
+    
+    all_depth_commands.append(combine_edit_sites_command)
+    
+    for i, bam_filepath in enumerate(bam_filepaths):
+        depth_command = (
+        "echo 'running samtools depth on {}...';"
+        "samtools depth -a -b {}/combined.bed {} >> {}/coverage/depths.txt"
+    ).format(bam_filepath, output_folder, bam_filepath, output_folder)
+        all_depth_commands.append(depth_command)
+        
     depth_bash = '{}/depth_command.sh'.format(output_folder)
     with open(depth_bash, 'w') as f:
-        f.write(depth_command)
+        for depth_command in all_depth_commands:
+            f.write('{}\n\n'.format(depth_command))
         
     print("Calculating depths...")
     subprocess.run(['bash', depth_bash])
@@ -407,20 +418,30 @@ def get_edits_with_coverage_df(output_folder,
                                barcode_tag=None, 
                                paired_end=False):
 
-    # For single-cell or paired end, which was calculated using the pysam coverage functions.
-    if barcode_tag or paired_end:
+    # For paired end, which was calculated using the pysam coverage functions.
+    if paired_end:
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      index_col=0,
                                                                      names=[
-                                                                         'barcode_position_index', 'barcode', 'contig', 'position', 'ref', 'alt', 'read_id',
+                                                                         'barcode_position_index', 'barcode', 'contig', 'contig_position', 'position', 'ref', 'alt', 'read_id',
                                                                          'strand', 'barcode_position', 
                                                                          'coverage', 'source', 'position_barcode'], dtype={'coverage': int, 'position': int,
                                                                                              'contig': str})
 
     else:
+        # For bulk single-end or for single-cell, for which coverages were calculated using samtools depth.
         all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
                                                                      dtype={'coverage': int, 'position': int,
                                                                                              'contig': str})
+    
+    # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
+    # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
+    # as the barcode information is separately already present as it's own column in this dataframe. To ensure code continuity,
+    # this will still be true even with no barcode specified, in which case the contig will be <contig>_no_barcode
+    
+    # Therefore: replace the contig with the part before the barcode
+    all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
+
     return all_edit_info_unique_position_with_coverage_df
         
         
@@ -429,17 +450,10 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         keep_intermediate_files=False,
         num_per_sublist=6,
         skip_coverage=False, interval_length=2000000):
-    
-    print_marine_logo()
-    
+        
     # Check to make sure the folder is empty, otherwise prompt for overwriting
-    # Getting the list of directories 
-    dir = os.listdir(output_folder) 
-      
-    # Checking if the list is empty or not 
-    if len(dir) > 0: 
-        pretty_print("WARNING {} is not empty".format(output_folder), style="^") 
-
+    if any(os.scandir(output_folder)):
+        pretty_print("WARNING: {} is not empty".format(output_folder), style="^")
     
     logging_folder = "{}/metadata".format(output_folder)
 
@@ -476,7 +490,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             # Take care of the case where no contigs are specified, so that all contigs available are processed
             broken_up_contigs = [[]]
         else:
-            if barcode_whitelist_file:
+            if barcode_tag:
                 # For single cell sequencing we will only process this many contigs at a time
                 broken_up_contigs = get_broken_up_contigs(contigs, num_per_sublist)
                     
@@ -532,6 +546,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         for k, v in overall_counts_summary_df.items():
             f.write(f'{k}\t{v}\n') 
 
+        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
+
     if not filtering_only and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -540,7 +556,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
         
-        if barcode_tag or paired_end:
+        if paired_end:
             results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
                                                                                    barcode_tag=barcode_tag, 
                                                                                    paired_end=paired_end,
@@ -551,9 +567,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                                                                                    bam_filepath=bam_filepath
                                                                                   )
         else:
-            # for bulk single-end, we will just concatenate all the edits files into one big bed file, and then run samtools depth
-            total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, bam_filepath)
-
+            # for bulk single-end or single-cell, we will just concatenate all the edits files into one big bed file, and then run samtools depth
+            if not barcode_tag:
+                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, [bam_filepath])
+            elif barcode_tag:
+                # for single-end, we want to run the samtools depth command for everyone of the reconfigured bam files
+                reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+                print("Running samtools depth on {} reconfigured bam paths...".format(len(reconfigured_bam_filepaths)))
+                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, reconfigured_bam_filepaths)
+                                                  
+                
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
          
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
@@ -833,7 +856,9 @@ if __name__ == '__main__':
    
     
     assert(not(coverage_only and filtering_only))
-    
+
+    print_marine_logo()
+
     pretty_print(["Arguments:",
                   "\tBAM filepath:\t{}".format(bam_filepath), 
                   "\tAnnotation bedfile filepath:\t{}".format(annotation_bedfile_path),
@@ -860,7 +885,7 @@ if __name__ == '__main__':
                   "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist)
                  ])
 
-    if not barcode_tag and not paired_end:
+    if not paired_end:
         # Check to see that samtools is available in the environment
         check_samtools()
 

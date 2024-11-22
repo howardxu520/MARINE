@@ -7,11 +7,33 @@ import pandas as pd
 import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
+from itertools import product
 
+cb_n = 2
+
+def generate_permutations_list_for_CB(n):
+    """
+    Generate all permutations of A, C, G, T for strings of length n
+    and format the output as a list with "-1" appended to each permutation.
+
+    Output for 2, for example: ['AA-1', 'AC-1', 'AG-1', 'AT-1', 'CA-1', 'CC-1', 'CG-1', 'CT-1', 'GA-1', 'GC-1'...]
+    Args:
+        n (int): Length of the strings to generate.
+        
+    Returns:
+        list: A list of strings where each string is a permutation with "-1" appended.
+    """
+    # Generate all combinations of A, C, G, T of length n
+    combinations = [''.join(p) for p in product('ACGT', repeat=n)]
+    
+    # Append "-1" to each permutation
+    result = [f"{combo}-1" for combo in combinations]
+    
+    return result
+    
+    
 suffixes = {
-    'CB': [
-        "A-1", "C-1", "G-1", "T-1"
-    ],
+    'CB': generate_permutations_list_for_CB(cb_n),
     'IS': [
         "00","01","02","03","04","05","06","07","08","09",
         "10","11","12","13","14","15","16","17","18","19",
@@ -98,8 +120,9 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
     samfile = pysam.AlignmentFile(bampath, "rb")
     contig_lengths_dict = get_contig_lengths_dict(samfile)
 
-    if verbose:
-        print('contig_lengths_dict:{}'.format(contig_lengths_dict))
+    #if verbose:
+    #    print('contig_lengths_dict:{}'.format(contig_lengths_dict))
+    
     if len(contigs) == 0:
         contigs_to_use = set(contig_lengths_dict.keys())
     else:
@@ -222,7 +245,7 @@ def write_rows_to_info_file(list_of_rows, f):
         f.write(info_line)
         
 def write_header_to_edit_info(f):
-    f.write('barcode\tcontig\tposition\tref\talt\tread_id\tstrand\n')
+    f.write('barcode\tcontig\tcontig_position\tposition\tref\talt\tread_id\tstrand\n')
     
 def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path, samfile_template):
     bam_for_barcode = bam_handles_for_barcodes.get(barcode_bam_file_path)

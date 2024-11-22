@@ -34,7 +34,7 @@ echo "SC tests scripts"
 ls -lh $MARINE/tests/$tests_folder/scripts/
 
 
-for t in "only_5_cells_test" "long_read_sc_test"
+for t in "only_5_cells_test" "only_5_cells_bulk_mode_test" "long_read_sc_test" "edge_case_test" "edge_case_dist_filter_test"
 
 do
     echo $t
@@ -48,7 +48,7 @@ done
 
 
 echo "Checking results..."
-$mypython $MARINE/tests/integration_tests_auto_check.py
+$mypython $MARINE/tests/integration_tests_auto_check.py tests
 
 exitcode=$?
 
