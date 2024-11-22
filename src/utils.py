@@ -8,10 +8,30 @@ import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
 
+cb_n = 2
+
+def generate_permutations_list_for_CB(n):
+    """
+    Generate all permutations of A, C, G, T for strings of length n
+    and format the output as a list with "-1" appended to each permutation.
+
+    Output for 2, for example: ['AA-1', 'AC-1', 'AG-1', 'AT-1', 'CA-1', 'CC-1', 'CG-1', 'CT-1', 'GA-1', 'GC-1'...]
+    Args:
+        n (int): Length of the strings to generate.
+        
+    Returns:
+        list: A list of strings where each string is a permutation with "-1" appended.
+    """
+    # Generate all combinations of A, C, G, T of length n
+    combinations = [''.join(p) for p in product('ACGT', repeat=n)]
+    
+    # Append "-1" to each permutation
+    result = [f"{combo}-1" for combo in combinations]
+    
+    return result
+    
 suffixes = {
-    'CB': [
-        "A-1", "C-1", "G-1", "T-1"
-    ],
+    'CB': generate_permutations_list_for_CB(cb_n),
     'IS': [
         "00","01","02","03","04","05","06","07","08","09",
         "10","11","12","13","14","15","16","17","18","19",
@@ -77,7 +97,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
         subsets_per_contig[contig_label] += 1
 
     if barcode_tag == 'CB':
-        number_of_expected_bams = 4
+        number_of_expected_bams = cb_n
     else:
         number_of_expected_bams = number_of_expected_bams
         
