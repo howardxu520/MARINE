@@ -17,5 +17,4 @@ $MARINE/tests/strandedness_tests/F2R1_end_second_in_pair_test \
 --strandedness 2 \
 --contigs "chr17" \
 --sailor \
---verbose \
 --num_intervals_per_contig 16

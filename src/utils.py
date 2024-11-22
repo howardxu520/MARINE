@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import sys
 from collections import OrderedDict, defaultdict
+from itertools import product
 
 cb_n = 2
 
@@ -29,7 +30,7 @@ def generate_permutations_list_for_CB(n):
     result = [f"{combo}-1" for combo in combinations]
     
     return result
-    
+
 suffixes = {
     'CB': generate_permutations_list_for_CB(cb_n),
     'IS': [
@@ -118,8 +119,9 @@ def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB
     samfile = pysam.AlignmentFile(bampath, "rb")
     contig_lengths_dict = get_contig_lengths_dict(samfile)
 
-    if verbose:
-        print('contig_lengths_dict:{}'.format(contig_lengths_dict))
+    #if verbose:
+    #    print('contig_lengths_dict:{}'.format(contig_lengths_dict))
+    
     if len(contigs) == 0:
         contigs_to_use = set(contig_lengths_dict.keys())
     else:
@@ -242,7 +244,7 @@ def write_rows_to_info_file(list_of_rows, f):
         f.write(info_line)
         
 def write_header_to_edit_info(f):
-    f.write('barcode\tcontig\tposition\tref\talt\tread_id\tstrand\n')
+    f.write('barcode\tcontig\tcontig_position\tposition\tref\talt\tread_id\tstrand\n')
     
 def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path, samfile_template):
     bam_for_barcode = bam_handles_for_barcodes.get(barcode_bam_file_path)

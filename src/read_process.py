@@ -131,7 +131,7 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
     is_read1 = read.is_read1
     is_read2 = read.is_read2
 
-    if barcode_tag:
+    if read.has_tag('CB'): # ie == 'CB'
         # Assuming R2 from 10x data contains the seqence 
         is_read1 = False
         is_read2 = True
@@ -189,7 +189,8 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
     if read.is_duplicate:
         return 'is_duplicate', [], {}
     
-    
+    if read.is_supplementary:
+        return 'is_supplementary', [], {}
     #if 'N' in cigarstring:
     #    return 'N', [], {}
     
@@ -227,13 +228,27 @@ def get_read_information(read, contig, barcode_tag='CB', verbose=False, stranded
         
         distance_from_read_end = np.min([updated_position - reference_start, reference_end - updated_position])
 
-        if distance_from_read_end >= dist_from_end and int(qual) >= min_base_quality:
+        if distance_from_read_end < dist_from_end:
+            continue
+
+        if int(qual) < min_base_quality:
+            continue
             
-            list_of_rows.append([
-                read_barcode, str(contig), str(updated_position), ref, alt, read_id, reverse_or_forward
-            ])
+        # If we have been provided with a barcode CB (single-cell), we need to preset our contigs to match
+        # the contigs that will be present in the reconfigured bams, ie. 9_GATCCCTCAGTAACGG-1 instead of 9.
+
+        if barcode_tag:
+            adjusted_contig = "{}_{}".format(str(contig), read_barcode)
+        else:
+            adjusted_contig = contig
+
+        contig_position_identity = str(adjusted_contig) + ':' + str(updated_position)
         
-            num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
+        list_of_rows.append([
+            read_barcode, str(adjusted_contig), contig_position_identity, str(updated_position), ref, alt, read_id, reverse_or_forward
+        ])
+    
+        num_edits_of_each_type['{}>{}'.format(ref, alt)] += 1
         
                   
     return None, list_of_rows, num_edits_of_each_type
@@ -467,11 +482,11 @@ def get_edit_information_wrapper(read, hamming_check=False, verbose=False):
     reference_seq = read.get_reference_sequence().lower()
     
     if verbose:
-        print("MD tag:", md_tag)
-        print("CIGAR string", cigarstring)
-        print("Reference seq:", reference_seq.upper())
-        print("Aligned seq:", aligned_seq)
-        print("Qualities:", query_qualities)
+        print("MD tag:\n\t", md_tag)
+        print("CIGAR string\n\t", cigarstring)
+        print("Reference seq:\n\t", reference_seq.upper())
+        print("Aligned seq:\n\t", aligned_seq)
+        print("Qualities:\n\t", query_qualities)
     
     return(get_edit_information(md_tag,
                                 cigar_tuples, 
