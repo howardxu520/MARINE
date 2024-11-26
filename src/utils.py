@@ -680,30 +680,40 @@ join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv 
             
 
 def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix=''):
+    """
+    Generate samtools depth commands for each BAM file using its corresponding split BED file.
+    """
     all_depth_commands = []
 
+    # Format output suffix
     if len(output_suffix) > 0:
         output_suffix = '_{}'.format(output_suffix)
         
-    if paired_end:
-        paired_end_option = '-s '
-    else:
-        paired_end_option = ''
+    # Paired-end option for samtools depth
+    paired_end_option = '-s ' if paired_end else ''
 
+    print("\n\tGetting suffixes from {} bam files...".format(len(bam_filepaths)))
     for i, bam_filepath in enumerate(bam_filepaths):
-        depth_command = (
-        "echo '    running samtools depth on {}...';"
-        "samtools depth {}-a -b {}/combined{}.bed {} >> {}/coverage/depths{}{}.txt".format(
-            bam_filepath, 
-            paired_end_option,
-            output_folder,
-            output_suffix,
-            bam_filepath, 
-            output_folder,
-            i,
-            output_suffix))
-        all_depth_commands.append(depth_command)
+        # Extract suffix from BAM filename
+        bam_filename = os.path.basename(bam_filepath)
+        bam_prefix, bam_suffix = bam_filename.split("_")[0], bam_filename.split("_")[1].split(".")[0]
+
+        # Path to the corresponding split BED file
+        split_bed_file = f"{output_folder}/combined{output_suffix}_split_by_suffix/combined{output_suffix}_{bam_prefix}_{bam_suffix}.bed"
+
+        if os.path.exists(split_bed_file):
+            # Construct the samtools depth command
+            depth_command = (
+                f"echo '    running samtools depth on {bam_filepath}...';"
+                f"samtools depth {paired_end_option}-a -b {split_bed_file} {bam_filepath} >> {output_folder}/coverage/depths{output_suffix}_{bam_prefix}_{bam_suffix}.txt"
+            )
+
+            # Add to the list of commands
+            all_depth_commands.append(depth_command)
+
+    print("\n\tOnly {} of the bam files had edits".format(len(all_depth_commands)))
     return all_depth_commands
+
 
 def generate_empty_matrix_file(matrix_output_filepath):
     pass
@@ -794,6 +804,7 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
 
     all_depth_commands += samtools_depth_commands
 
+    print('\n\t\tsamtools_depth_commands: {}'.format(len(samtools_depth_commands)))
     if len(output_suffix) > 0:
         output_suffix = '_{}'.format(output_suffix)
      
@@ -826,7 +837,7 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
             sys.exit(1)  # Exit with an error code
         
         print("Done calculating depths. Merging depths...")
-        run_command(f"cat {output_folder}/coverage/depths*{output_suffix}.txt > {output_folder}/depths{output_suffix}.txt")
+        run_command(f"cat {output_folder}/coverage/depths{output_suffix}*.txt > {output_folder}/depths{output_suffix}.txt")
         print("Done merging depths.")
 
         
@@ -1013,9 +1024,11 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
 
 def delete_intermediate_files(output_folder):
     to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
-                 'concat_command.sh', 'depth_command.sh', 'combined.bed', 'merge_command.sh',
+                 'concat_command.sh', 'depth_command_source_cells.sh', 'combined.bed', 'merge_command.sh',
                  'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
-                 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
+                 'depths_source_cells.txt', 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv',
+                 'combined_all_cells.bed', 'depth_command_all_cells.sh', 'depths_all_cells.txt', 'combined_source_cells.bed'
+                ]
     for object in to_delete:
         object_path = '{}/{}'.format(output_folder, object)
 

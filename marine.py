@@ -145,6 +145,44 @@ def get_broken_up_contigs(contigs, num_per_sublist):
             broken_up_contigs.append(contig_sublist)
     return broken_up_contigs
 
+def split_bed_file(input_bed_file, output_folder, bam_file_paths, output_suffix='', run=False):
+    """
+    Split a combined BED file into multiple BED files based on BAM file suffixes.
+    Match rows containing both the chromosome prefix and the cell ID suffix.
+    """
+    all_awk_commands = []
+    
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Extract chromosome and suffix pairs from BAM file paths
+    suffix_pairs = [
+        (os.path.basename(bam).split("_")[0], os.path.basename(bam).split("_")[1].split(".")[0])
+        for bam in bam_file_paths
+    ]
+
+    # Run a grep/awk command for each suffix pair
+    for chrom, suffix in suffix_pairs:
+        output_bed_file = os.path.join(output_folder, f"combined_{output_suffix}_{chrom}_{suffix}.bed")
+        awk_command = f"awk '$1 ~ /^{chrom}_/ && $1 ~ /{suffix}/' {input_bed_file} > {output_bed_file}"
+        
+        all_awk_commands.append(awk_command)
+
+        if run:
+            try:
+                #print(f"Running: {awk_command}")
+                run_command(awk_command)
+                
+                # Check if the output file is empty
+                if os.path.getsize(output_bed_file) == 0:
+                    #print(f"No matches found for {chrom}_{suffix}. Removing empty file.")
+                    os.remove(output_bed_file)
+    
+            except subprocess.CalledProcessError as e:
+                #print(f"No matches found for {chrom}_{suffix}. Skipping...")
+                pass
+                
+    return all_awk_commands
 
 def generate_depths(output_folder, bam_filepaths, paired_end=False):
     
@@ -158,13 +196,25 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
         "awk 'NR > 1 {{print $2, $4-1, $4}}' OFS='\t' \"$file\"; "
         "done | sort -k1,1 -k2,2n -u > {}/combined_source_cells.bed;"
     ).format(output_folder, output_folder)
-    
     run_command(combine_edit_sites_command)
 
     all_depth_commands.append(combine_edit_sites_command)
 
+    output_suffix = 'source_cells'
+    if len(bam_filepaths) > 1:
+        separate_edit_sites_commands = split_bed_file(
+            f"{output_folder}/combined_{output_suffix}.bed",
+            f"{output_folder}/combined_{output_suffix}_split_by_suffix",
+            bam_filepaths, 
+            output_suffix=output_suffix,
+            run=True
+        )
+        
+        all_depth_commands += separate_edit_sites_commands
+
     make_depth_command_script(paired_end, bam_filepaths, output_folder,
                               all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True)
+
 
     print("Concatenating edit info files...")
     concatenate_files(output_folder, "edit_info/*edit_info.tsv",
@@ -259,7 +309,7 @@ def generate_combined_sites_bed_for_all_cells(output_folder):
         unique_positions = df_for_chromosome[["Start", "End"]].drop_duplicates().values.tolist()  # Unique location pairs
         
         # Open the output file and write combinations line by line
-        with open(output_file, "w") as f:
+        with open(output_file, "a") as f:
             for contig in unique_contigs:
                 for start, end in unique_positions:
                     f.write(f"{contig}\t{start}\t{end}\n")
@@ -495,11 +545,23 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         generate_combined_sites_bed_for_all_cells(output_folder)
         
          # We want to run the samtools depth command for each of the reconfigured bam files
-        reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+        bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+        output_suffix = "all_cells"
+        if len(bam_filepaths) > 1:
+            separate_edit_sites_commands = split_bed_file(
+                f"{output_folder}/combined_{output_suffix}.bed",
+                f"{output_folder}/combined_{output_suffix}_split_by_suffix",
+                bam_filepaths, 
+                output_suffix=output_suffix,
+                run=True
+            )
+
         make_depth_command_script(paired_end,
                                   reconfigured_bam_filepaths, 
                                   output_folder, 
-                                  output_suffix='all_cells', run=True, pivot=True)
+                                  output_suffix=output_suffix,
+                                  run=True,
+                                  pivot=True)
         
     if not keep_intermediate_files:
         pretty_print("Deleting intermediate files...", style="-")
