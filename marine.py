@@ -9,8 +9,8 @@ import pandas as pd
 import polars as pl
 import psutil
 import pysam
-from scipy.special import betainc
 import shutil
+import subprocess
 import sys
 from sys import getsizeof
 import time
@@ -32,7 +32,8 @@ remove_softclipped_bases,find
 
 from utils import get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, \
-pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written
+pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written, \
+make_depth_command_script, generate_and_run_bash_merge, get_sailor_sites
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
@@ -232,72 +233,6 @@ def print_marine_logo():
         
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
-def calculate_sailor_score(sailor_row):
-    edits = sailor_row['count']
-    num_reads = sailor_row['coverage']
-    original_base_counts = num_reads - edits
-    
-    cov_margin = 0.01
-    alpha, beta = 0, 0
-
-    num_failures = 0
-    failure_messages = []
-    try:
-        edit_frac = float(edits) / float(num_reads)
-    except Exception as e:
-        num_failures += 1
-        print("Bad Row: {}".format(sailor_row))
-        return None
-        
-    # calc smoothed counts and confidence
-    destination_base_smoothed = edits + alpha
-    origin_base_smoothed = original_base_counts + beta
-
-    ########  MOST IMPORTANT LINE  ########
-    # calculates the confidence of theta as
-    # P( theta < cov_margin | A, G) ~ Beta_theta(G, A)
-    confidence = 1 - betainc(destination_base_smoothed, origin_base_smoothed, cov_margin)
-    return confidence
-    
-
-def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_coverage=False):
-    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['strand_conversion'] == conversion]
-
-    if skip_coverage:
-        # Case where we want to skip coverage counting, we will just set it to -1 in the sailor-style output
-        coverage_col = "-1"
-        weird_sites = pd.DataFrame()
-    else:
-        # Normally, assume that there is a coverage column
-        coverage_col = final_site_level_information_df['coverage'].astype(str)
-
-        weird_sites = final_site_level_information_df[
-            (final_site_level_information_df.coverage == 0) |\
-            (final_site_level_information_df.coverage < final_site_level_information_df['count'])]
-    
-        print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
-            len(weird_sites)))
-              
-        final_site_level_information_df = final_site_level_information_df[
-        (final_site_level_information_df.coverage > 0) & \
-        (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
-        ]
-
-    
-    final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + coverage_col
-
-    if skip_coverage:
-        final_site_level_information_df['score'] = -1
-    else:
-        final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
-
-    final_site_level_information_df['start'] = final_site_level_information_df['position']
-    final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
-    
-    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
-    return final_site_level_information_df, weird_sites
-    
-
 def collate_edit_info_shards(output_folder):
     edit_info_folder = "{}/edit_info".format(output_folder)
     edit_info_files = glob("{}/*".format(edit_info_folder))
@@ -328,83 +263,6 @@ def get_broken_up_contigs(contigs, num_per_sublist):
         if len(contig_sublist) > 0:
             broken_up_contigs.append(contig_sublist)
     return broken_up_contigs
-
-import subprocess
-
-
-import subprocess
-
-def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns):
-    # Convert header list into a tab-separated string
-    header = "\t".join(header_columns)
-
-    # Generate the Bash command for processing
-    bash_command = f"""#!/bin/bash
-    # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
-    # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
-    
-    # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
-    sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
-
-    # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
-join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $4, $5, $6, $7, $8, $11}}' > "{output_file_path}"
-
-    # Step 4: Add header to the output file
-    echo -e "{header}" | cat - "{output_file_path}" > temp && mv temp "{output_file_path}"
-    """
-
-    # Write the command to a shell script
-    bash_script_path = "{}/merge_command.sh".format(output_folder)
-    with open(bash_script_path, "w") as file:
-        file.write(bash_command)
-
-    # Run the generated bash script
-    print("Running Bash merge script...")
-    subprocess.run(["bash", bash_script_path], check=True)
-    print(f"Merged file saved to {output_file_path}")
-
-
-def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', run=False):
-    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix='')
-    for depth_command in samtools_depth_commands:
-        all_depth_commands.append(depth_command)
-        
-    depth_bash = '{}/depth_command.sh'.format(output_folder)
-    with open(depth_bash, 'w') as f:
-        for depth_command in all_depth_commands:
-            f.write('{}\n\n'.format(depth_command))
-
-    if run:             
-        print("Calculating depths...")
-        subprocess.run(['bash', depth_bash])
-        print("Done calculating depths.")
-            
-
-def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix=''):
-    all_depth_commands = []
-
-    if len(output_suffix) > 0:
-        output_suffix = '_{}'.format(output_suffix)
-        
-    if paired_end:
-        paired_end_option = '-s '
-    else:
-        paired_end_option = ''
-
-    for i, bam_filepath in enumerate(bam_filepaths):
-        depth_command = (
-        "echo 'running samtools depth on {}...';"
-        "samtools depth {}-a -b {}/combined.bed {} >> {}/coverage/depths{}.txt".format(
-            bam_filepath, 
-            paired_end_option,
-            output_folder,
-            bam_filepath, 
-            output_folder,
-            output_suffix))
-        all_depth_commands.append(depth_command)
-    return all_depth_commands
-
 
 def generate_depths(output_folder, bam_filepaths, paired_end=False):
     
