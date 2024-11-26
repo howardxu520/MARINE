@@ -692,7 +692,7 @@ def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output
 
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
-        "echo 'running samtools depth on {}...';"
+        "echo '    running samtools depth on {}...';"
         "samtools depth {}-a -b {}/combined{}.bed {} >> {}/coverage/depths{}{}.txt".format(
             bam_filepath, 
             paired_end_option,
@@ -705,16 +705,87 @@ def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output
         all_depth_commands.append(depth_command)
     return all_depth_commands
 
+def generate_empty_matrix_file(matrix_output_filepath):
+    pass
+
+
+def pivot_depths_output(depths_input_filepath, matrix_output_filepath):
+    """
+    Transform depths data into a pivoted matrix with reformatted row and column labels.
+
+        The rows will look like this:
+        
+        9_GATCCCTCAGTAACGG-1	3000448	1
+        9_GATCCCTCAGTAACGG-1	3000469	1
+        9_GATCCCTCAGTAACGG-1	3000508	3
+        
+        We want them to look like this:
+        
+        GATCCCTCAGTAACGG-1	9:3000448	1
+        GATCCCTCAGTAACGG-1	9:3000469	1
+        GATCCCTCAGTAACGG-1	9:3000508	3
+        
+        # And after the pivot:
+                        9:3000448 9:3000469 9:3000508
+        GATCCCTCAGTAACGG        1         1         3
+    
+    """
+    # Read the universal coverage data
+    df = pd.read_csv(depths_input_filepath, sep="\t", header=None, names=["Contig", "Position", "Coverage"])
+
+
+    # Extract sample ID from the Contig and create a combined column for Position
+    df["Barcode"] = df["Contig"].str.split("_", n=1).str[1]  # Extract everything after the first underscore
+    df["CombinedPosition"] = df["Contig"].str.split("_", n=1).str[0] + ":" + df["Position"].astype(str)
+
+    # Drop the original Contig and Position columns (optional, for clarity)
+    df = df[["Barcode", "CombinedPosition", "Coverage"]]
+
+    # Pivot the data to make a matrix of Sample x CombinedPosition with values being Coverage
+    pivot = df.pivot(index="CombinedPosition", columns="Barcode", values="Coverage").fillna(0)
+    
+    # Write to output
+    pivot.to_csv(matrix_output_filepath, sep="\t")
+    
+
 
 def run_command(command):
-    """Helper function to execute a single shell command."""
+    # Run the samtools depth command
+    subprocess.run(command, shell=True, check=True)
+
+
+def run_depth_command(command, pivot=False, output_matrix_folder=None):
+    """
+    Run a shell command and optionally process the output file with the pivot function.
+    """
     try:
-        subprocess.run(command, shell=True, check=True)
+        # Extract output file from the command
+        depths_file = command.split(">>")[-1].strip()
+        
+        # Check if the depths file exists and is non-empty
+        if not os.path.exists(depths_file) or os.path.getsize(depths_file) == 0:
+            # File doesn't exist or is empty, run the command
+            print(f"Running coverage command for {depths_file}...")
+            run_command(command)
+
+        else:
+            print(f"Skipping coverage generation for existing non-empty file: {depths_file}")
+        
+        if pivot:
+            matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
+
+            if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
+                # Pivot the depths output file into a matrix
+                pivot_depths_output(depths_file, matrix_output_file)
+
     except subprocess.CalledProcessError as e:
-        print(f"Command failed: {command}\nError: {e}")
+        print(f"Command failed: {command}\nError: {e}", file=sys.stderr)
         raise e
 
-def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', run=False, processes=4):
+
+
+def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', 
+                              run=False, pivot=False, processes=4):
     samtools_depth_start_time = time.perf_counter()
     
     samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, 
@@ -732,23 +803,65 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
             f.write('{}\n\n'.format(depth_command))
 
     if run:             
+        
         print("Calculating depths using multiprocessing...")
         try:
+            # Create a folder for matrix outputs if pivoting is enabled
+            output_matrix_folder = f"{output_folder}/matrix_outputs"
+            if pivot:
+                os.makedirs(output_matrix_folder, exist_ok=True)
+            
+            # Prepare arguments for starmap
+            run_command_args = [
+                (command, pivot, output_matrix_folder) for command in samtools_depth_commands
+            ]
+
+            # Use starmap to pass multiple arguments to run_command
             with Pool(processes=processes) as pool:
-                pool.map(run_command, samtools_depth_commands)
+                pool.starmap(run_depth_command, run_command_args)
+                
         except Exception as e:
             # If any command fails, print error and exit
             print(f"Aborting: One or more commands failed with an error: {e}", file=sys.stderr)
             sys.exit(1)  # Exit with an error code
         
         print("Done calculating depths. Merging depths...")
-        run_command("cat {}/coverage/depths*{}.txt > {}/coverage/depths{}.txt".format(output_folder, output_suffix,
-            output_folder, output_suffix))
-
+        run_command(f"cat {output_folder}/coverage/depths*{output_suffix}.txt > {output_folder}/depths{output_suffix}.txt")
         print("Done merging depths.")
 
+        
+        if pivot:
+            print("Merging matrices column-wise...")
+
+            # Create a list of non-empty matrix files
+            matrix_files = [
+                os.path.join(output_matrix_folder, file)
+                for file in os.listdir(output_matrix_folder)
+                if os.path.getsize(os.path.join(output_matrix_folder, file)) > 20  # Skip empty files
+            ]
+    
+            if len(matrix_files) > 0:
+                # Ensure only the first file keeps the row headers
+                first_file = matrix_files[0]
+                other_files = matrix_files[1:]
+                
+                merged_file = os.path.join(output_folder, "comprehensive_coverage_matrix.tsv")
+        
+                # Prepare the paste command
+                strip_headers_command = " ".join(
+                    [f"<(cut -f2- {file})" for file in other_files]
+                )
+                paste_command = f"paste {first_file} {strip_headers_command} > {merged_file}"
+        
+                # Use bash to execute the paste command
+                run_command(f"bash -c '{paste_command}'")
+        
+                print(f"Columnar merge complete. Output saved to {merged_file}.")
+            else:
+                print("No non-empty matrix files to merge.")
+        
     samtools_depth_total_time = time.perf_counter() - samtools_depth_start_time
-    print('Total seconds for samtools depth commands to run: {}'.format(samtools_depth_total_time))
+    print('Total seconds for samtools depth and matrix generation commands to run: {}'.format(samtools_depth_total_time))
 
 
 def calculate_sailor_score(sailor_row):

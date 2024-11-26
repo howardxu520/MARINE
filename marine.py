@@ -178,7 +178,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
 
     generate_and_run_bash_merge(output_folder,
                                 '{}/final_edit_info_no_coverage.tsv'.format(output_folder),
-                            '{}/coverage/depths_source_cells.txt'.format(output_folder), 
+                            '{}/depths_source_cells.txt'.format(output_folder), 
                             '{}/final_edit_info.tsv'.format(output_folder), header_columns)
     
     coverage_total_time = time.perf_counter() - coverage_start_time
@@ -499,14 +499,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         make_depth_command_script(paired_end,
                                   reconfigured_bam_filepaths, 
                                   output_folder, 
-                                  output_suffix='all_cells', run=True)
-        # Read the universal coverage data
-        df = pd.read_csv("{}/coverage/depths_all_cells.txt".format(output_folder), sep="\t", header=None, names=["Contig", "Position", "Coverage"])
-        # Pivot the data to make a matrix of contig x position with values being coverage
-        pivot = df.pivot(index="Contig", columns="Position", values="Coverage").fillna(0)
-        # Write to output
-        pivot.to_csv("{}/comprehensive_coverage_matrix.tsv".format(output_folder), sep="\t")
-            
+                                  output_suffix='all_cells', run=True, pivot=True)
+        
     if not keep_intermediate_files:
         pretty_print("Deleting intermediate files...", style="-")
         delete_intermediate_files(output_folder)
