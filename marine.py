@@ -365,7 +365,12 @@ join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv 
     print(f"Merged file saved to {output_file_path}")
 
 
-def generate_depths_with_samtools(output_folder, bam_filepaths):
+def generate_depths_with_samtools(output_folder, bam_filepaths, paired_end=False):
+    if paired_end:
+        paired_end_option = '-s '
+    else:
+        paired_end_option = ''
+        
     coverage_start_time = time.perf_counter()
 
     all_depth_commands = []
@@ -382,8 +387,8 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
         "echo 'running samtools depth on {}...';"
-        "samtools depth -a -b {}/combined.bed {} >> {}/coverage/depths.txt"
-    ).format(bam_filepath, output_folder, bam_filepath, output_folder)
+        "samtools depth {}-a -b {}/combined.bed {} >> {}/coverage/depths.txt"
+    ).format(paired_end_option, bam_filepath, output_folder, bam_filepath, output_folder)
         all_depth_commands.append(depth_command)
         
     depth_bash = '{}/depth_command.sh'.format(output_folder)
@@ -556,25 +561,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         coverage_subfolder = '{}/coverage'.format(output_folder)
         make_folder(coverage_subfolder)
         
-        if paired_end:
-            results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
-                                                                                   barcode_tag=barcode_tag, 
-                                                                                   paired_end=paired_end,
-                                                                                   verbose=verbose,
-                                                                                   cores=cores,
-                                                                                   number_of_expected_bams=number_of_expected_bams,
-                                                                                   min_read_quality=min_read_quality,
-                                                                                   bam_filepath=bam_filepath
-                                                                                  )
-        else:
-            # for bulk single-end or single-cell, we will just concatenate all the edits files into one big bed file, and then run samtools depth
-            if not barcode_tag:
-                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, [bam_filepath])
-            elif barcode_tag:
-                # for single-end, we want to run the samtools depth command for everyone of the reconfigured bam files
-                reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
-                print("Running samtools depth on {} reconfigured bam paths...".format(len(reconfigured_bam_filepaths)))
-                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, reconfigured_bam_filepaths)
+        # for bulk or paired end, we will just concatenate all the edits files into one big bed file, 
+        # and then run samtools depth
+        if not barcode_tag:
+            total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, [bam_filepath], paired_end=paired_end)
+            
+        elif barcode_tag:
+            # for single-cell, we want to run the samtools depth command for everyone of the reconfigured bam files
+            reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+            print("Running samtools depth on {} reconfigured bam paths...".format(len(reconfigured_bam_filepaths)))
+            total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, reconfigured_bam_filepaths)
                                                   
                 
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
