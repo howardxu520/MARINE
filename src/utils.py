@@ -11,6 +11,8 @@ from collections import OrderedDict, defaultdict
 from itertools import product
 from scipy.special import betainc
 import shutil
+from multiprocessing import Pool
+import multiprocessing
 import time
 
 cb_n = 1
@@ -691,39 +693,59 @@ def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
         "echo 'running samtools depth on {}...';"
-        "samtools depth {}-a -b {}/combined{}.bed {} >> {}/coverage/depths{}.txt".format(
+        "samtools depth {}-a -b {}/combined{}.bed {} >> {}/coverage/depths{}{}.txt".format(
             bam_filepath, 
             paired_end_option,
             output_folder,
             output_suffix,
             bam_filepath, 
             output_folder,
+            i,
             output_suffix))
         all_depth_commands.append(depth_command)
     return all_depth_commands
 
 
-def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', run=False):
+def run_command(command):
+    """Helper function to execute a single shell command."""
+    try:
+        subprocess.run(command, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Command failed: {command}\nError: {e}")
+        raise e
 
+def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', run=False, processes=4):
     samtools_depth_start_time = time.perf_counter()
     
-    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix=output_suffix)
+    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, 
+                                                          output_folder, 
+                                                          output_suffix=output_suffix)
+
+    all_depth_commands += samtools_depth_commands
 
     if len(output_suffix) > 0:
         output_suffix = '_{}'.format(output_suffix)
-    
-    for depth_command in samtools_depth_commands:
-        all_depth_commands.append(depth_command)
-        
+     
     depth_bash = '{}/depth_command{}.sh'.format(output_folder, output_suffix)
     with open(depth_bash, 'w') as f:
         for depth_command in all_depth_commands:
             f.write('{}\n\n'.format(depth_command))
 
     if run:             
-        print("Calculating depths...")
-        subprocess.run(['bash', depth_bash])
-        print("Done calculating depths.")
+        print("Calculating depths using multiprocessing...")
+        try:
+            with Pool(processes=processes) as pool:
+                pool.map(run_command, samtools_depth_commands)
+        except Exception as e:
+            # If any command fails, print error and exit
+            print(f"Aborting: One or more commands failed with an error: {e}", file=sys.stderr)
+            sys.exit(1)  # Exit with an error code
+        
+        print("Done calculating depths. Merging depths...")
+        run_command("cat {}/coverage/depths*{}.txt > {}/coverage/depths{}.txt".format(output_folder, output_suffix,
+            output_folder, output_suffix))
+
+        print("Done merging depths.")
 
     samtools_depth_total_time = time.perf_counter() - samtools_depth_start_time
     print('Total seconds for samtools depth commands to run: {}'.format(samtools_depth_total_time))

@@ -34,7 +34,7 @@ from utils import get_intervals, index_bam, write_rows_to_info_file, write_heade
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, \
 pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written, \
 make_depth_command_script, generate_and_run_bash_merge, get_sailor_sites, \
-concatenate_files, get_edits_with_coverage_df, zero_edit_found, delete_intermediate_files
+concatenate_files, run_command, get_edits_with_coverage_df, zero_edit_found, delete_intermediate_files
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
@@ -156,12 +156,15 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
         "echo 'concatenating bed file...';"
         "for file in {}/edit_info/*edit_info.tsv; do "
         "awk 'NR > 1 {{print $2, $4-1, $4}}' OFS='\t' \"$file\"; "
-        "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
+        "done | sort -k1,1 -k2,2n -u > {}/combined_source_cells.bed;"
     ).format(output_folder, output_folder)
+    
+    run_command(combine_edit_sites_command)
+
     all_depth_commands.append(combine_edit_sites_command)
 
     make_depth_command_script(paired_end, bam_filepaths, output_folder,
-                              all_depth_commands=all_depth_commands, output_suffix='', run=True)
+                              all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True)
 
     print("Concatenating edit info files...")
     concatenate_files(output_folder, "edit_info/*edit_info.tsv",
@@ -175,7 +178,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
 
     generate_and_run_bash_merge(output_folder,
                                 '{}/final_edit_info_no_coverage.tsv'.format(output_folder),
-                            '{}/coverage/depths.txt'.format(output_folder), 
+                            '{}/coverage/depths_source_cells.txt'.format(output_folder), 
                             '{}/final_edit_info.tsv'.format(output_folder), header_columns)
     
     coverage_total_time = time.perf_counter() - coverage_start_time
@@ -238,7 +241,7 @@ def generate_combined_sites_bed_for_all_cells(output_folder):
     # 2_CATCCCTCAGTAACGA-1	3000451	3000452
     
     # Input and output files
-    input_file = f"{output_folder}/combined.bed"
+    input_file = f"{output_folder}/combined_source_cells.bed"
     output_file = f"{output_folder}/combined_all_cells.bed"
     
     # Load the input data
