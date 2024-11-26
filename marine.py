@@ -33,7 +33,7 @@ remove_softclipped_bases,find
 from utils import get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, \
 pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written, \
-make_depth_command_script, generate_and_run_bash_merge, get_sailor_sites
+make_depth_command_script, generate_and_run_bash_merge, get_sailor_sites, concatenate_files
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
@@ -168,56 +168,6 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     return total_bam_generation_time, total_seconds_for_bams_df
     
     
-import subprocess 
-
-
-def concatenate_files(source_folder, file_pattern, output_filepath):
-    # Create the concatenation command with numeric sorting and header skipping
-    concat_command = (
-        f"for f in $(ls -v {source_folder}/{file_pattern}); do "
-        "tail -n +2 \"$f\"; "  # Skip the header row for each file
-        "done > {}".format(output_filepath)
-    )
-
-    # Write the command to a shell script
-    concat_bash = f"{source_folder}/concat_command.sh"
-    with open(concat_bash, 'w') as f:
-        f.write(concat_command)
-        
-    print("Concatenating files in numerical order without headers...")
-    subprocess.run(['bash', concat_bash])
-    print("Done concatenating.")
-
-
-def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
-                       min_read_quality=0, bam_filepath=''):
-
-    # Single-cell or long read version:
-    edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
-                                                                                      barcode_tag=barcode_tag,
-                                                                                      number_of_expected_bams=number_of_expected_bams
-                                                                                     )
-    
-    #if verbose:
-    #    print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
-
-        
-    results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
-                                                                            barcode_tag=barcode_tag,
-                                                                            paired_end=paired_end,
-                                                                            verbose=verbose,
-                                                                            processes=cores
-                                                                           )
-    concatenate_files(output_folder, "coverage/*.tsv", "{}/final_edit_info.tsv".format(output_folder))
-    
-    total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
-    total_seconds_for_contig_df.columns = ['seconds']
-    total_seconds_for_contig_df['contig sections'] = total_seconds_for_contig_df.index
-    total_seconds_for_contig_df.index = range(len(total_seconds_for_contig_df))
-    
-    return results, total_time, total_seconds_for_contig_df
-    
-
 def print_marine_logo():
     logo_lines = [
     "::::    ::::      :::     :::::::::  ::::::::::: ::::    ::: :::::::::: ",
@@ -282,7 +232,9 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
                               all_depth_commands=all_depth_commands, output_suffix='', run=True)
 
     print("Concatenating edit info files...")
-    concatenate_files(output_folder, "edit_info/*edit_info.tsv", "{}/final_edit_info_no_coverage.tsv".format(output_folder))
+    concatenate_files(output_folder, "edit_info/*edit_info.tsv",
+                      "{}/final_edit_info_no_coverage.tsv".format(output_folder),
+                     run=True)
 
     print("Append the depth columns to the concatenated final_edit_info file...")
 

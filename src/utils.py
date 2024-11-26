@@ -6,6 +6,7 @@ import polars as pl
 import pandas as pd
 import numpy as np
 import sys
+import subprocess
 from collections import OrderedDict, defaultdict
 from itertools import product
 from scipy.special import betainc
@@ -779,4 +780,23 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_cov
     
     final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
     return final_site_level_information_df, weird_sites
+
+
+def concatenate_files(source_folder, file_pattern, output_filepath, run=False):
+    # Create the concatenation command with numeric sorting and header skipping
+    concat_command = (
+        f"for f in $(ls -v {source_folder}/{file_pattern}); do "
+        "tail -n +2 \"$f\"; "  # Skip the header row for each file
+        "done > {}".format(output_filepath)
+    )
+
+    # Write the command to a shell script
+    concat_bash = f"{source_folder}/concat_command.sh"
+    with open(concat_bash, 'w') as f:
+        f.write(concat_command)
+
+    if run:
+        print("Concatenating files in numerical order without headers...")
+        subprocess.run(['bash', concat_bash])
+        print("Done concatenating.")
     
