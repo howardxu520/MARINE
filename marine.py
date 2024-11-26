@@ -434,11 +434,11 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         
         if len(sailor_list) > 0:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
-            convert_sites_to_sailor(final_site_level_information_df, conversion_search, output_folder, skip_coverage)
+            convert_sites_to_sailor(final_site_level_information_df, sailor_list, output_folder, skip_coverage)
            
         if len(bedgraphs_list) > 0:
             # Make plot of edit distributions
-            generate_bedgraphs(final_site_level_information_df, conversion_search, output_folder)
+            generate_bedgraphs(final_site_level_information_df, bedgraphs_list, output_folder)
                 
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
