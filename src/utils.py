@@ -793,86 +793,130 @@ def run_depth_command(command, pivot=False, output_matrix_folder=None):
         raise e
 
 
+def merge_files_by_chromosome(args):
+    """
+    Helper function to merge files for a single chromosome.
+    """
+    chromosome, files, output_folder = args
+    first_file = files[0]
+    other_files = files[1:]
+    merged_file = os.path.join(output_folder, f"{chromosome}_comprehensive_coverage_matrix.tsv")
 
-def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', 
-                              run=False, pivot=False, processes=4):
-    samtools_depth_start_time = time.perf_counter()
+    # Prepare the paste command
+    strip_headers_command = " ".join(
+        [f"<(cut -f2- {file})" for file in other_files]
+    )
+    paste_command = f"paste {first_file} {strip_headers_command} > {merged_file}"
+
+    # Use bash to execute the paste command
+    run_command(f"bash -c '{paste_command}'")
+    print(f"Columnar merge complete for {chromosome}. Output saved to {merged_file}.")
+
+
+def prepare_matrix_files_multiprocess(output_matrix_folder, 
+                                      output_folder, 
+                                      processes=4):
+    """
+    Merges matrix files column-wise, grouping by chromosome, using multiprocessing.
+    """
+    print("Merging matrices column-wise by chromosome...")
+
+    # Group files by chromosome
+    matrix_files = [
+        os.path.join(output_matrix_folder, file)
+        for file in os.listdir(output_matrix_folder)
+        if file.endswith("matrix.tsv") and os.path.getsize(os.path.join(output_matrix_folder, file)) > 20  # Skip empty files
+    ]
     
+    if not matrix_files:
+        print("No non-empty matrix files to merge.")
+        return
+
+    # Group files by chromosome
+    file_groups = {}
+    for file in matrix_files:
+        chromosome = os.path.basename(file).split("all_cells_")[-1].split("_")[0]  # Adjust this split logic as needed
+        file_groups.setdefault(chromosome, []).append(file)
+
+    # Prepare arguments for multiprocessing
+    task_args = [(chromosome, files, output_folder) for chromosome, files in file_groups.items()]
+
+    # Use multiprocessing to run the merge for each chromosome
+    with Pool(processes=processes) as pool:
+        pool.map(merge_files_by_chromosome, task_args)
+
+    print("All columnar merges complete.")
+
+
+
+def merge_depth_files(output_folder, output_suffix=''):
+    """
+    Merges depth files into a single file.
+    """
+    print("Merging depths...")
+        
+    depth_files = f"{output_folder}/coverage/depths_{output_suffix}*.txt"
+    merged_depth_file = f"{output_folder}/depths_{output_suffix}.txt"
+    run_command(f"cat {depth_files} > {merged_depth_file}")
+    print(f"Depths merged into {merged_depth_file}.")
+
+
+def run_samtools_depth(commands, processes, pivot, output_matrix_folder):
+    """
+    Runs samtools depth commands in parallel using multiprocessing.
+    """
+    try:
+        # Prepare arguments for starmap
+        run_command_args = [
+            (command, pivot, output_matrix_folder) for command in commands
+        ]
+
+        with Pool(processes=processes) as pool:
+            pool.starmap(run_depth_command, run_command_args)
+
+    except Exception as e:
+        print(f"Aborting: One or more commands failed with an error: {e}", file=sys.stderr)
+        sys.exit(1)  # Exit with an error code
+
+
+def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
+                              output_suffix='', run=False, pivot=False, processes=4):
+    """
+    Main function to generate and execute samtools depth commands, and optionally pivot and merge matrices.
+    """
+    samtools_depth_start_time = time.perf_counter()
+
+    # Generate samtools depth commands
     samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, 
                                                           output_folder, 
                                                           output_suffix=output_suffix)
-
     all_depth_commands += samtools_depth_commands
 
-    print('\n\t\tsamtools_depth_commands: {}'.format(len(samtools_depth_commands)))
-    if len(output_suffix) > 0:
-        output_suffix = '_{}'.format(output_suffix)
-     
-    depth_bash = '{}/depth_command{}.sh'.format(output_folder, output_suffix)
-    with open(depth_bash, 'w') as f:
-        for depth_command in all_depth_commands:
-            f.write('{}\n\n'.format(depth_command))
+    print(f"\tsamtools_depth_commands: {len(samtools_depth_commands)}")
 
-    if run:             
-        
+    # Create a folder for matrix outputs if pivoting is enabled
+    output_matrix_folder = f"{output_folder}/matrix_outputs"
+    final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"
+    if pivot:
+        os.makedirs(output_matrix_folder, exist_ok=True)
+        os.makedirs(final_combined_matrices_folder, exist_ok=True)
+
+    if run:
         print("Calculating depths using multiprocessing...")
-        try:
-            # Create a folder for matrix outputs if pivoting is enabled
-            output_matrix_folder = f"{output_folder}/matrix_outputs"
-            if pivot:
-                os.makedirs(output_matrix_folder, exist_ok=True)
-            
-            # Prepare arguments for starmap
-            run_command_args = [
-                (command, pivot, output_matrix_folder) for command in samtools_depth_commands
-            ]
+        run_samtools_depth(samtools_depth_commands, processes, pivot, output_matrix_folder)
 
-            # Use starmap to pass multiple arguments to run_command
-            with Pool(processes=processes) as pool:
-                pool.starmap(run_depth_command, run_command_args)
-                
-        except Exception as e:
-            # If any command fails, print error and exit
-            print(f"Aborting: One or more commands failed with an error: {e}", file=sys.stderr)
-            sys.exit(1)  # Exit with an error code
-        
-        print("Done calculating depths. Merging depths...")
-        run_command(f"cat {output_folder}/coverage/depths{output_suffix}*.txt > {output_folder}/depths{output_suffix}.txt")
-        print("Done merging depths.")
+        merge_depth_files(output_folder, output_suffix)
 
-        
         if pivot:
-            print("Merging matrices column-wise...")
+            prepare_matrix_files_multiprocess(
+                output_matrix_folder, 
+                final_combined_matrices_folder,
+                processes=processes
+            )
 
-            # Create a list of non-empty matrix files
-            matrix_files = [
-                os.path.join(output_matrix_folder, file)
-                for file in os.listdir(output_matrix_folder)
-                if os.path.getsize(os.path.join(output_matrix_folder, file)) > 20  # Skip empty files
-            ]
-    
-            if len(matrix_files) > 0:
-                # Ensure only the first file keeps the row headers
-                first_file = matrix_files[0]
-                other_files = matrix_files[1:]
-                
-                merged_file = os.path.join(output_folder, "comprehensive_coverage_matrix.tsv")
-        
-                # Prepare the paste command
-                strip_headers_command = " ".join(
-                    [f"<(cut -f2- {file})" for file in other_files]
-                )
-                paste_command = f"paste {first_file} {strip_headers_command} > {merged_file}"
-        
-                # Use bash to execute the paste command
-                run_command(f"bash -c '{paste_command}'")
-        
-                print(f"Columnar merge complete. Output saved to {merged_file}.")
-            else:
-                print("No non-empty matrix files to merge.")
-        
     samtools_depth_total_time = time.perf_counter() - samtools_depth_start_time
-    print('Total seconds for samtools depth and matrix generation commands to run: {}'.format(samtools_depth_total_time))
+    print(f"Total seconds for samtools depth and matrix generation commands to run: {samtools_depth_total_time}")
+
 
 
 def calculate_sailor_score(sailor_row):
