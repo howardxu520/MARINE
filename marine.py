@@ -365,12 +365,32 @@ join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv 
     print(f"Merged file saved to {output_file_path}")
 
 
-def generate_depths_with_samtools(output_folder, bam_filepaths, paired_end=False):
+def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix=''):
+    all_depth_commands = []
+
+    if len(output_suffix) > 0:
+        output_suffix = '_{}'.format(output_suffix)
+        
     if paired_end:
         paired_end_option = '-s '
     else:
         paired_end_option = ''
-        
+
+    for i, bam_filepath in enumerate(bam_filepaths):
+        depth_command = (
+        "echo 'running samtools depth on {}...';"
+        "samtools depth {}-a -b {}/combined.bed {} >> {}/coverage/depths{}.txt".format(
+            bam_filepath, 
+            paired_end_option,
+            output_folder,
+            bam_filepath, 
+            output_folder,
+            output_suffix))
+        all_depth_commands.append(depth_command)
+    return all_depth_commands
+    
+def generate_depths_with_samtools(output_folder, bam_filepaths, paired_end=False):
+    
     coverage_start_time = time.perf_counter()
 
     all_depth_commands = []
@@ -383,12 +403,9 @@ def generate_depths_with_samtools(output_folder, bam_filepaths, paired_end=False
     ).format(output_folder, output_folder)
     
     all_depth_commands.append(combine_edit_sites_command)
-    
-    for i, bam_filepath in enumerate(bam_filepaths):
-        depth_command = (
-        "echo 'running samtools depth on {}...';"
-        "samtools depth {}-a -b {}/combined.bed {} >> {}/coverage/depths.txt"
-    ).format(paired_end_option, bam_filepath, output_folder, bam_filepath, output_folder)
+
+    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix='')
+    for depth_command in samtools_depth_commands:
         all_depth_commands.append(depth_command)
         
     depth_bash = '{}/depth_command.sh'.format(output_folder)
