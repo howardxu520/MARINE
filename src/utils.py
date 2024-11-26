@@ -10,6 +10,8 @@ import subprocess
 from collections import OrderedDict, defaultdict
 from itertools import product
 from scipy.special import betainc
+import shutil
+import time
 
 cb_n = 1
 
@@ -689,10 +691,11 @@ def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output
     for i, bam_filepath in enumerate(bam_filepaths):
         depth_command = (
         "echo 'running samtools depth on {}...';"
-        "samtools depth {}-a -b {}/combined.bed {} >> {}/coverage/depths{}.txt".format(
+        "samtools depth {}-a -b {}/combined{}.bed {} >> {}/coverage/depths{}.txt".format(
             bam_filepath, 
             paired_end_option,
             output_folder,
+            output_suffix,
             bam_filepath, 
             output_folder,
             output_suffix))
@@ -701,11 +704,18 @@ def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output
 
 
 def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], output_suffix='', run=False):
-    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix='')
+
+    samtools_depth_start_time = time.perf_counter()
+    
+    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix=output_suffix)
+
+    if len(output_suffix) > 0:
+        output_suffix = '_{}'.format(output_suffix)
+    
     for depth_command in samtools_depth_commands:
         all_depth_commands.append(depth_command)
         
-    depth_bash = '{}/depth_command.sh'.format(output_folder)
+    depth_bash = '{}/depth_command{}.sh'.format(output_folder, output_suffix)
     with open(depth_bash, 'w') as f:
         for depth_command in all_depth_commands:
             f.write('{}\n\n'.format(depth_command))
@@ -714,6 +724,9 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
         print("Calculating depths...")
         subprocess.run(['bash', depth_bash])
         print("Done calculating depths.")
+
+    samtools_depth_total_time = time.perf_counter() - samtools_depth_start_time
+    print('Total seconds for samtools depth commands to run: {}'.format(samtools_depth_total_time))
 
 
 def calculate_sailor_score(sailor_row):
@@ -799,4 +812,80 @@ def concatenate_files(source_folder, file_pattern, output_filepath, run=False):
         print("Concatenating files in numerical order without headers...")
         subprocess.run(['bash', concat_bash])
         print("Done concatenating.")
+
+
+def get_edits_with_coverage_df(output_folder,
+                               barcode_tag=None):
+
+    all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     dtype={'coverage': int, 'position': int,
+                                                                                             'contig': str})
+    # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
+    # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
+    # as the barcode information is separately already present as it's own column in this dataframe. To ensure code continuity,
+    # this will still be true even with no barcode specified, in which case the contig will be <contig>_no_barcode
     
+    # Therefore: replace the contig with the part before the barcode
+    all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
+
+    return all_edit_info_unique_position_with_coverage_df
+        
+
+
+def zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder):
+    print("No edits found.")
+    sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
+    sites_empty_df = pd.DataFrame(columns=sites_columns)
+    sites_empty_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), sep='\t', index=False)
+
+    Annotated_sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion','feature_name','feature_type','feature_strand']
+    annotated_sites_empty_df = pd.DataFrame(columns=Annotated_sites_columns)
+    annotated_sites_empty_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), sep='\t', index=False)
+
+    empty_df = pd.DataFrame()
+    if len(sailor_list) > 0:
+        for conversion in sailor_list:
+            conversion_search = conversion[0] + '>' + conversion[1]
+            empty_df.to_csv('{}/sailor_style_sites_{}.bed'.format(
+                output_folder, 
+                conversion_search.replace(">", "-")), 
+                header=False, index=False, sep='\t')
+
+    if len(bedgraphs_list) > 0:
+        bedgraph_folder = '{}/bedgraphs'.format(output_folder)
+        make_folder(bedgraph_folder)
+        for conversion in bedgraphs_list:
+            conversion_search = conversion[0] + '>' + conversion[1]
+            empty_df.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
+            
+    current, peak = tracemalloc.get_traced_memory()
+    
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'sites\t{len(final_site_level_information_df)}\n') 
+        f.write(f'peak_memory_mb\t{peak/1e6}\n') 
+        f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
+
+    print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
+    print(f'Time elapsed: {time.time()-start_time:.2f}s')
+
+    if not keep_intermediate_files:
+        pretty_print("Deleting intermediate files...", style="-")
+        delete_intermediate_files(output_folder)
+
+    pretty_print("Done!", style="+")
+    return 'Done'
+
+
+def delete_intermediate_files(output_folder):
+    to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
+                 'concat_command.sh', 'depth_command.sh', 'combined.bed', 'merge_command.sh',
+                 'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
+                 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
+    for object in to_delete:
+        object_path = '{}/{}'.format(output_folder, object)
+
+        if os.path.exists(object_path):
+            if os.path.isfile(object_path):
+                os.remove(object_path)
+            else:
+                shutil.rmtree(object_path)
