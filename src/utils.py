@@ -660,7 +660,7 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
     bash_command = f"""#!/bin/bash
     # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
     # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
+    awk -v OFS='\\t' '{{print $1, $2+1, $3, $1":"($2+1)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
     
     # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
@@ -682,42 +682,6 @@ join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv 
     subprocess.run(["bash", bash_script_path], check=True)
     print(f"Merged file saved to {output_file_path}")
             
-
-def get_samtools_depth_commands(paired_end, bam_filepaths, output_folder, output_suffix=''):
-    """
-    Generate samtools depth commands for each BAM file using its corresponding split BED file.
-    """
-    all_depth_commands = []
-
-    # Format output suffix
-    if len(output_suffix) > 0:
-        output_suffix = '_{}'.format(output_suffix)
-        
-    # Paired-end option for samtools depth
-    paired_end_option = '-s ' if paired_end else ''
-
-    print("\n\tGetting suffixes from {} bam files...".format(len(bam_filepaths)))
-    for i, bam_filepath in enumerate(bam_filepaths):
-        # Extract suffix from BAM filename
-        bam_filename = os.path.basename(bam_filepath)
-        bam_prefix, bam_suffix = bam_filename.split("_")[0], bam_filename.split("_")[1].split(".")[0]
-
-        # Path to the corresponding split BED file
-        split_bed_file = f"{output_folder}/combined{output_suffix}_split_by_suffix/combined{output_suffix}_{bam_prefix}_{bam_suffix}.bed"
-
-        if os.path.exists(split_bed_file):
-            # Construct the samtools depth command
-            depth_command = (
-                f"echo '    running samtools depth on {bam_filepath}...';"
-                f"samtools depth {paired_end_option}-a -b {split_bed_file} {bam_filepath} >> {output_folder}/coverage/depths{output_suffix}_{bam_prefix}_{bam_suffix}.txt"
-            )
-
-            # Add to the list of commands
-            all_depth_commands.append(depth_command)
-
-    print("\n\tOnly {} of the bam files had edits".format(len(all_depth_commands)))
-    return all_depth_commands
-
 
 def generate_empty_matrix_file(matrix_output_filepath):
     pass
@@ -766,34 +730,6 @@ def pivot_depths_output(depths_input_filepath, matrix_output_filepath):
 def run_command(command):
     # Run the samtools depth command
     subprocess.run(command, shell=True, check=True)
-
-
-def run_depth_command(command, pivot=False, output_matrix_folder=None):
-    """
-    Run a shell command and optionally process the output file with the pivot function.
-    """
-    try:
-        # Extract output file from the command
-        depths_file = command.split(">>")[-1].strip()
-        
-        # Check if the depths file exists and is non-empty
-        if not os.path.exists(depths_file) or os.path.getsize(depths_file) == 0:
-            # File doesn't exist or is empty, run the command
-            run_command(command)
-
-        else:
-            print(f"\t\tSkipping coverage generation for existing non-empty file: {depths_file}")
-        
-        if pivot:
-            matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
-
-            if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
-                # Pivot the depths output file into a matrix
-                pivot_depths_output(depths_file, matrix_output_file)
-
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed: {command}\nError: {e}", file=sys.stderr)
-        raise e
 
 
 def merge_files_by_chromosome(args):
@@ -864,22 +800,90 @@ def merge_depth_files(output_folder, output_suffix=''):
     print(f"Depths merged into {merged_depth_file}.")
 
 
-def run_samtools_depth(commands, processes, pivot, output_matrix_folder):
+
+def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matrix_folder):
     """
-    Runs samtools depth commands in parallel using multiprocessing.
+    Mimic samtools depth -a by including positions with zero coverage and applying equivalent filters.
+    """
+
+    depths_file = output_filepath
+    
+    print(f"Running samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}")
+    
+    regions = []
+    with open(bed_filepath, "r") as bed:
+        for line in bed:
+            fields = line.strip().split()
+            chrom, start, end = fields[0], int(fields[1]), int(fields[2])
+            regions.append((chrom, start, end))
+
+    print(f"\t{len(regions)} regions")
+    
+    with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
+        for chrom, start, end in regions:
+            # Get coverage, applying base quality filter
+            coverage = bam.count_coverage(
+                chrom, start, end, quality_threshold=0  # Mimics -Q 13 in samtools depth
+            )
+
+            # Calculate total coverage for each position and include zero-coverage positions
+            for pos in range(start, end):
+                total_coverage = sum(base[pos - start] for base in coverage)
+                out.write(f"{chrom}\t{pos}\t{total_coverage}\n")
+
+
+    if output_matrix_folder:
+        matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
+    
+        if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
+            # Pivot the depths output file into a matrix
+            pivot_depths_output(depths_file, matrix_output_file)
+
+
+def run_pysam_count_coverage(args_list, processes):
+    """
+    Runs pysam.count_coverage in parallel using multiprocessing.
     """
     try:
-        # Prepare arguments for starmap
-        run_command_args = [
-            (command, pivot, output_matrix_folder) for command in commands
-        ]
-
         with Pool(processes=processes) as pool:
-            pool.starmap(run_depth_command, run_command_args)
+            pool.starmap(calculate_coverage, args_list)
 
     except Exception as e:
-        print(f"Aborting: One or more commands failed with an error: {e}", file=sys.stderr)
+        print(f"Aborting: One or more coverage calculations failed with an error: {e}", file=sys.stderr)
         sys.exit(1)  # Exit with an error code
+
+
+def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', pivot=False):
+    """
+    Prepare arguments for pysam coverage calculation for each BAM file and its BED file.
+    """
+    # Create a folder for matrix outputs if pivoting is enabled
+    if pivot:
+        output_matrix_folder = f"{output_folder}/matrix_outputs"
+        os.makedirs(output_matrix_folder, exist_ok=True)
+    else:
+        output_matrix_folder = None
+
+    args_list = []
+
+    # Format output suffix
+    if len(output_suffix) > 0:
+        output_suffix = f"_{output_suffix}"
+
+    for bam_filepath in bam_filepaths:
+        # Extract suffix from BAM filename
+        bam_filename = os.path.basename(bam_filepath)
+        bam_prefix, bam_suffix = bam_filename.split("_")[0], bam_filename.split("_")[1].split(".")[0]
+
+        # Path to the corresponding split BED file
+        bed_filepath = f"{output_folder}/combined{output_suffix}_split_by_suffix/combined{output_suffix}_{bam_prefix}_{bam_suffix}.bed"
+        output_filepath = f"{output_folder}/coverage/depths{output_suffix}_{bam_prefix}_{bam_suffix}.txt"
+
+        if os.path.exists(bed_filepath):
+            args_list.append((bam_filepath, bed_filepath, output_filepath, output_matrix_folder))
+
+    return args_list
+
 
 
 def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
@@ -889,32 +893,30 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
     """
     samtools_depth_start_time = time.perf_counter()
 
-    # Generate samtools depth commands
-    samtools_depth_commands = get_samtools_depth_commands(paired_end, bam_filepaths, 
-                                                          output_folder, 
-                                                          output_suffix=output_suffix)
-    all_depth_commands += samtools_depth_commands
+     # Prepare pysam coverage arguments
+    pysam_coverage_args = prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix=output_suffix, pivot=pivot)
+    
+    print(f"\tPrepared coverage arguments for {len(pysam_coverage_args)} BAM files.")
 
-    print(f"\tsamtools_depth_commands: {len(samtools_depth_commands)}")
+    #all_depth_commands += samtools_depth_commands
+    #print(f"\tsamtools_depth_commands: {len(samtools_depth_commands)}")
 
     with open('{}/depth_commands_{}.txt'.format(output_folder, output_suffix), 'w') as f:
         for d in all_depth_commands:
             f.write('{}\n\n'.format(d))
             
-    # Create a folder for matrix outputs if pivoting is enabled
-    output_matrix_folder = f"{output_folder}/matrix_outputs"
-    final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"
-    if pivot:
-        os.makedirs(output_matrix_folder, exist_ok=True)
-        os.makedirs(final_combined_matrices_folder, exist_ok=True)
-
     if run:
-        print("Calculating depths using multiprocessing...")
-        run_samtools_depth(samtools_depth_commands, processes, pivot, output_matrix_folder)
+        print("Calculating depths using multiprocessing with pysam...")
+        run_pysam_count_coverage(pysam_coverage_args, processes)
 
         merge_depth_files(output_folder, output_suffix)
 
         if pivot:
+            output_matrix_folder = f"{output_folder}/matrix_outputs"
+            final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"
+            os.makedirs(final_combined_matrices_folder, exist_ok=True)
+        
+            print("\nRunning pivot...\n")
             prepare_matrix_files_multiprocess(
                 output_matrix_folder, 
                 final_combined_matrices_folder,
