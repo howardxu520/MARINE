@@ -93,7 +93,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
                                                                       split_bams_folder, 
                                                                       barcode_tag=barcode_tag,
-                                                                      number_of_expected_bams=number_of_expected_bams
+                                                                    number_of_expected_bams=number_of_expected_bams
                                                                      )
     if verbose:
         pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
@@ -213,7 +213,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
         all_depth_commands += separate_edit_sites_commands
 
     make_depth_command_script(paired_end, bam_filepaths, output_folder,
-                              all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True)
+                              all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores)
 
 
     print("Concatenating edit info files...")
@@ -406,7 +406,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                 pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
                 pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
                 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
+
+                
                 total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
                 #total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
                 pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
@@ -561,7 +562,9 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                                   output_folder, 
                                   output_suffix=output_suffix,
                                   run=True,
-                                  pivot=True)
+                                  pivot=True,
+                                  processes=cores
+                                 )
         
     if not keep_intermediate_files:
         pretty_print("Deleting intermediate files...", style="-")
@@ -654,6 +657,14 @@ if __name__ == '__main__':
     num_per_sublist = args.num_per_sublist
 
 
+    """
+    # Convert all_cells_coverage into list of conversions for which to output all cell info
+    if not all_cells_coverage is None:
+        all_cells_coverage_list = all_cells_coverage.upper().replace('I', 'G').split(',')
+        for c in all_cells_coverage_list:
+            assert(c in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG']) 
+    """
+    
     # Convert bedgraphs argument into list of conversions
     if not bedgraphs is None:
         if barcode_tag in ['CB', 'IB']:

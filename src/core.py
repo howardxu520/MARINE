@@ -149,7 +149,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
         
     output_file = '{}/{}_{}_{}_{}_edit_info.tsv'.format(edit_info_subfolder, contig, split_index, start, end)
     output_bedfile = '{}/{}_{}_{}_{}_edit_positions.bed'.format(edit_info_subfolder, contig, split_index, start, end)
-    
+
     remove_file_if_exists(output_file)
     
     with open(output_file, 'w') as f:        

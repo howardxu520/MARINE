@@ -15,7 +15,7 @@ from multiprocessing import Pool
 import multiprocessing
 import time
 
-cb_n = 1
+CB_N = 2
 
 def generate_permutations_list_for_CB(n):
     """
@@ -38,7 +38,7 @@ def generate_permutations_list_for_CB(n):
     return result
 
 suffixes = {
-    'CB': generate_permutations_list_for_CB(cb_n),
+    'CB': generate_permutations_list_for_CB(CB_N),
     'IS': [
         "00","01","02","03","04","05","06","07","08","09",
         "10","11","12","13","14","15","16","17","18","19",
@@ -104,7 +104,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
         subsets_per_contig[contig_label] += 1
 
     if barcode_tag == 'CB':
-        number_of_expected_bams = cb_n
+        number_of_expected_bams = 4**CB_N
     else:
         number_of_expected_bams = number_of_expected_bams
         
@@ -582,6 +582,18 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     print("\t{} suffixes".format(len(suffix_options)))
     
     for suffix in suffix_options:
+        # Make a sub-subfolder to put the bams for this specific contig
+        contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
+        if not os.path.exists(contig_folder):
+            os.mkdir(contig_folder)
+            
+            
+        bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
+
+        if os.path.exists(f"{bam_file_name}.bai"):
+            print(f"{bam_file_name}.bai, skipping...")
+            return
+        
         if barcode_tag:
             all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
         else:
@@ -619,15 +631,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
                     reads_count_for_suffix
                     ))
                 sys.exit(1)
-            
-        
-        # Make a sub-subfolder to put the bams for this specific contig
-        contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
-        if not os.path.exists(contig_folder):
-            os.mkdir(contig_folder)
-            
-            
-        bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
         
         # Write, sort and index bam immediately
         write_reads_to_file(reads_deduped, bam_file_name, header_string) 
@@ -639,6 +642,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             rm_bam(bam_file_name)
         except Exception as e:
             print("Failed at indexing {}".format(bam_file_name))
+            raise e
             
     
 def concat_and_write_bams_wrapper(params):
@@ -779,7 +783,7 @@ def run_depth_command(command, pivot=False, output_matrix_folder=None):
             run_command(command)
 
         else:
-            print(f"Skipping coverage generation for existing non-empty file: {depths_file}")
+            print(f"\t\tSkipping coverage generation for existing non-empty file: {depths_file}")
         
         if pivot:
             matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
@@ -915,7 +919,12 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
             )
 
     samtools_depth_total_time = time.perf_counter() - samtools_depth_start_time
-    print(f"Total seconds for samtools depth and matrix generation commands to run: {samtools_depth_total_time}")
+
+    
+    if pivot:
+        print(f"Total seconds for samtools depth and matrix generation commands to run: {samtools_depth_total_time}")
+    else:
+        print(f"Total seconds for samtools depth commands to run: {samtools_depth_total_time}")
 
 
 
@@ -1067,7 +1076,10 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
 
 
 def delete_intermediate_files(output_folder):
-    to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
+    to_delete = ['coverage', 'edit_info', 'split_bams', 'combined_all_cells_split_by_suffix',
+                 'combined_source_cells_split_by_suffix',
+                 'matrix_outputs',
+                 'all_edit_info.tsv', 
                  'concat_command.sh', 'depth_command_source_cells.sh', 'combined.bed', 'merge_command.sh',
                  'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
                  'depths_source_cells.txt', 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv',
