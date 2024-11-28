@@ -181,7 +181,7 @@ def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix='
             handle.close()
             
 
-def generate_depths(output_folder, bam_filepaths, paired_end=False):
+def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=None):
     
     coverage_start_time = time.perf_counter()
 
@@ -207,7 +207,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
         )
         
     make_depth_command_script(paired_end, bam_filepaths, output_folder,
-                              all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores)
+                              all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores, barcode_tag=barcode_tag)
 
 
     print("Concatenating edit info files...")
@@ -429,7 +429,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
         
         print("Running samtools depth on {} subset bam paths...".format(len(reconfigured_bam_filepaths)))
-        total_time, total_seconds_for_contig_df = generate_depths(output_folder, reconfigured_bam_filepaths, paired_end=paired_end)
+        total_time, total_seconds_for_contig_df = generate_depths(output_folder, reconfigured_bam_filepaths, paired_end=paired_end, barcode_tag=barcode_tag)
                                               
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
          
@@ -556,7 +556,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                                   output_suffix=output_suffix,
                                   run=True,
                                   pivot=True,
-                                  processes=cores
+                                  processes=cores,
+                                  barcode_tag=barcode_tag
                                  )
         
     if not keep_intermediate_files:
@@ -638,7 +639,7 @@ if __name__ == '__main__':
     paired_end = args.paired_end
     all_cells_coverage = args.all_cells_coverage
     skip_coverage = args.skip_coverage
-    
+
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
     min_read_quality = args.min_read_quality
@@ -650,6 +651,11 @@ if __name__ == '__main__':
     num_per_sublist = args.num_per_sublist
 
 
+    # all_cells_coverage only applies for single cell case
+    if not barcode_tag:
+        if all_cells_coverage == True:
+            all_cells_coverage = False
+        
     """
     # Convert all_cells_coverage into list of conversions for which to output all cell info
     if not all_cells_coverage is None:

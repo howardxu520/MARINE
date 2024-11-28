@@ -853,7 +853,7 @@ def run_pysam_count_coverage(args_list, processes):
         sys.exit(1)  # Exit with an error code
 
 
-def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', pivot=False):
+def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', pivot=False, barcode_tag=None):
     """
     Prepare arguments for pysam coverage calculation for each BAM file and its BED file.
     """
@@ -870,31 +870,43 @@ def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', 
     if len(output_suffix) > 0:
         output_suffix = f"_{output_suffix}"
 
+    print("prepare_pysam_coverage_args, barcode_tag is {}".format(barcode_tag))
+
     for bam_filepath in bam_filepaths:
         # Extract suffix from BAM filename
         bam_filename = os.path.basename(bam_filepath)
         bam_prefix, bam_suffix = bam_filename.split("_")[0], bam_filename.split("_")[1].split(".")[0]
 
-        # Path to the corresponding split BED file
-        bed_filepath = f"{output_folder}/combined{output_suffix}_split_by_suffix/combined{output_suffix}_{bam_prefix}_{bam_suffix}.bed"
-        output_filepath = f"{output_folder}/coverage/depths{output_suffix}_{bam_prefix}_{bam_suffix}.txt"
-
+        if barcode_tag:
+            # Path to the corresponding split BED file
+            bed_filepath = f"{output_folder}/combined{output_suffix}_split_by_suffix/combined{output_suffix}_{bam_prefix}_{bam_suffix}.bed"
+            output_filepath = f"{output_folder}/coverage/depths{output_suffix}_{bam_prefix}_{bam_suffix}.txt"
+            
+        else:
+            # bulk case
+            bed_filepath = f"{output_folder}/combined{output_suffix}.bed"
+            output_filepath = f"{output_folder}/coverage/depths{output_suffix}.txt"
+            
+            
         if os.path.exists(bed_filepath):
             args_list.append((bam_filepath, bed_filepath, output_filepath, output_matrix_folder))
-
+        else:
+            print(f"Did not find {bed_filepath}")
+        
+        
     return args_list
 
 
 
 def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
-                              output_suffix='', run=False, pivot=False, processes=4):
+                              output_suffix='', run=False, pivot=False, processes=4, barcode_tag=None):
     """
     Main function to generate and execute samtools depth commands, and optionally pivot and merge matrices.
     """
     samtools_depth_start_time = time.perf_counter()
 
      # Prepare pysam coverage arguments
-    pysam_coverage_args = prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix=output_suffix, pivot=pivot)
+    pysam_coverage_args = prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix=output_suffix, pivot=pivot, barcode_tag=barcode_tag)
     
     print(f"\tPrepared coverage arguments for {len(pysam_coverage_args)} BAM files.")
 
