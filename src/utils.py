@@ -15,7 +15,7 @@ from multiprocessing import Pool
 import multiprocessing
 import time
 
-CB_N = 2
+CB_N = 1
 
 def generate_permutations_list_for_CB(n):
     """
@@ -779,7 +779,6 @@ def run_depth_command(command, pivot=False, output_matrix_folder=None):
         # Check if the depths file exists and is non-empty
         if not os.path.exists(depths_file) or os.path.getsize(depths_file) == 0:
             # File doesn't exist or is empty, run the command
-            print(f"Running coverage command for {depths_file}...")
             run_command(command)
 
         else:
@@ -898,6 +897,10 @@ def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_dept
 
     print(f"\tsamtools_depth_commands: {len(samtools_depth_commands)}")
 
+    with open('{}/depth_commands_{}.txt'.format(output_folder, output_suffix), 'w') as f:
+        for d in all_depth_commands:
+            f.write('{}\n\n'.format(d))
+            
     # Create a folder for matrix outputs if pivoting is enabled
     output_matrix_folder = f"{output_folder}/matrix_outputs"
     final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"

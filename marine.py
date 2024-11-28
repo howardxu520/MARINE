@@ -145,44 +145,41 @@ def get_broken_up_contigs(contigs, num_per_sublist):
             broken_up_contigs.append(contig_sublist)
     return broken_up_contigs
 
-def split_bed_file(input_bed_file, output_folder, bam_file_paths, output_suffix='', run=False):
+def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix=''):
     """
-    Split a combined BED file into multiple BED files based on BAM file suffixes.
-    Match rows containing both the chromosome prefix and the cell ID suffix.
+    Split a BED file into multiple files based on suffixes in the first column.
+    Each line is assigned to the appropriate file based on the suffix.
     """
-    all_awk_commands = []
-    
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    # Extract chromosome and suffix pairs from BAM file paths
     suffix_pairs = [
-        (os.path.basename(bam).split("_")[0], os.path.basename(bam).split("_")[1].split(".")[0])
-        for bam in bam_file_paths
+        (os.path.basename(bam).split("_")[0], 
+         os.path.basename(bam).split("_")[1].split(".")[0]) for bam in bam_filepaths
     ]
-
-    # Run a grep/awk command for each suffix pair
-    for chrom, suffix in suffix_pairs:
-        output_bed_file = os.path.join(output_folder, f"combined_{output_suffix}_{chrom}_{suffix}.bed")
-        awk_command = f"awk '$1 ~ /^{chrom}_/ && $1 ~ /{suffix}/' {input_bed_file} > {output_bed_file}"
         
-        all_awk_commands.append(awk_command)
+    # Open file handles for each suffix
+    file_handles = {}
+    for prefix, suffix in suffix_pairs:
+        output_file = os.path.join(output_folder, f"combined_{output_suffix}_{prefix}_{suffix}.bed")
+        file_handles[prefix + suffix] = open(output_file, 'w')
 
-        if run:
-            try:
-                #print(f"Running: {awk_command}")
-                run_command(awk_command)
-                
-                # Check if the output file is empty
-                if os.path.getsize(output_bed_file) == 0:
-                    #print(f"No matches found for {chrom}_{suffix}. Removing empty file.")
-                    os.remove(output_bed_file)
-    
-            except subprocess.CalledProcessError as e:
-                #print(f"No matches found for {chrom}_{suffix}. Skipping...")
-                pass
-                
-    return all_awk_commands
+    try:
+        with open(input_bed_file, 'r') as infile:
+            for line in infile:
+                # Parse the first column to determine the suffix
+                columns = line.split()
+                chrom = columns[0]  # Assuming the first column is the chromosome
+                for prefix, suffix in suffix_pairs:
+                    if chrom.startswith(prefix) and chrom.endswith(suffix):
+                        file_handles[prefix + suffix].write(line)
+                        break
+
+    finally:
+        # Close all file handles
+        for handle in file_handles.values():
+            handle.close()
+            
 
 def generate_depths(output_folder, bam_filepaths, paired_end=False):
     
@@ -202,16 +199,13 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False):
 
     output_suffix = 'source_cells'
     if len(bam_filepaths) > 1:
-        separate_edit_sites_commands = split_bed_file(
+        split_bed_file(
             f"{output_folder}/combined_{output_suffix}.bed",
             f"{output_folder}/combined_{output_suffix}_split_by_suffix",
-            bam_filepaths, 
-            output_suffix=output_suffix,
-            run=True
+            bam_filepaths,
+            output_suffix=output_suffix
         )
         
-        all_depth_commands += separate_edit_sites_commands
-
     make_depth_command_script(paired_end, bam_filepaths, output_folder,
                               all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores)
 
@@ -549,12 +543,11 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
         output_suffix = "all_cells"
         if len(bam_filepaths) > 1:
-            separate_edit_sites_commands = split_bed_file(
+            split_bed_file(
                 f"{output_folder}/combined_{output_suffix}.bed",
                 f"{output_folder}/combined_{output_suffix}_split_by_suffix",
                 bam_filepaths, 
-                output_suffix=output_suffix,
-                run=True
+                output_suffix=output_suffix
             )
 
         make_depth_command_script(paired_end,
