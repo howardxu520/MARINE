@@ -289,7 +289,7 @@ def generate_bedgraphs(final_site_level_information_df, conversion_search, outpu
         sites_for_conversion_bedgraph_cols.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
 
 
-def generate_combined_sites_bed_for_all_cells(output_folder):
+def generate_combined_sites_bed_for_all_cells(output_folder, strand_conversion="A>G"):
     # go from:
     #
     # 9_GATCCCTCAGTAACGG-1	3000447	3000448
@@ -305,29 +305,47 @@ def generate_combined_sites_bed_for_all_cells(output_folder):
     # 2_CATCCCTCAGTAACGA-1	3000451	3000452
     
     # Input and output files
-    input_file = f"{output_folder}/combined_source_cells.bed"
+    input_file = f"{output_folder}/final_filtered_site_info.tsv"
     output_file = f"{output_folder}/combined_all_cells.bed"
     
     # Load the input data
-    df = pd.read_csv(input_file, sep="\t", header=None, names=["Contig", "Start", "End"])
+    df = pd.read_csv(input_file, sep="\t")
+    print(f"Found {len(df)} total edits...")
 
-    df['Chromosome'] = [str(i.split('_')[0]) for i in df['Contig']]
 
-    unique_chromosomes = df['Chromosome'].unique()
-    print("Unique chromosomes found: {}".format(unique_chromosomes))
+    df = df[df['strand_conversion'] == strand_conversion]
+    print(f"Running all positions for {len(df)} {strand_conversion} edits")
     
+    df['chromosome'] = df['contig'].astype(str)
+    df['contig'] = df['contig'].astype(str) + '_' + df['barcode'].astype(str)
+    
+    unique_chromosomes = df['chromosome'].unique()
+    print("Unique chromosomes found: {}".format(unique_chromosomes))
+
+    total_positions = 0
     for chromosome in unique_chromosomes: 
-        df_for_chromosome = df[df['Chromosome'] == str(chromosome)]
-        # Create unique lists:
-        unique_contigs = df_for_chromosome["Contig"].unique()  # Unique contig pairs, within this chromosome
-        unique_positions = df_for_chromosome[["Start", "End"]].drop_duplicates().values.tolist()  # Unique location pairs
+        # Permute only within chromosome
         
+        df_for_chromosome = df[df['chromosome'] == str(chromosome)]
+        # Create unique lists:
+        unique_contigs = df_for_chromosome["contig"].unique()  # Unique contig pairs, within this chromosome
+
+        print("\n{} unique_contigs for chromosome {}".format(len(unique_contigs), chromosome))
+        
+        unique_positions = set(df_for_chromosome["position"].tolist())  # Unique location pairs
+
+        print(f'unique_positions: {len(unique_positions)}, unique_contigs: {len(unique_contigs)}')
+
+        positions_for_chromosome = len(unique_positions) * len(unique_contigs)
+        total_positions += positions_for_chromosome
+        print('\ttotal_positions: {}\n'.format(positions_for_chromosome))
         # Open the output file and write combinations line by line
         with open(output_file, "a") as f:
             for contig in unique_contigs:
-                for start, end in unique_positions:
-                    f.write(f"{contig}\t{start}\t{end}\n")
-    
+                for position in unique_positions:
+                    f.write(f"{contig}\t{position-1}\t{position}\n")
+    print("Overall positions: {}\n\n".format(total_positions))
+          
     print(f"Output written to {output_file}")
 
 
