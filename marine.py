@@ -243,7 +243,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
                                 '{}/final_edit_info_no_coverage.tsv'.format(output_folder),
                             '{}/depths_source_cells.txt'.format(output_folder), 
                             '{}/final_edit_info.tsv'.format(output_folder), 
-                                header_columns, paired_end=paired_end)
+                                header_columns, barcode_tag=barcode_tag)
     
     coverage_total_time = time.perf_counter() - coverage_start_time
     

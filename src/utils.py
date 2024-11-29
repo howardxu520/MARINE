@@ -652,14 +652,14 @@ def concat_and_write_bams_wrapper(params):
     concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
 
 
-def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns, paired_end=False):
+def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns, barcode_tag=None):
     # Convert header list into a tab-separated string
     header = "\t".join(header_columns)
 
-    position_adjustment = '1'
-    if paired_end:
-        position_adjustment = '0' 
-    print(f"position adjustment is {position_adjustment} (paired_end is {paired_end})")
+    position_adjustment = '1' # for samtools view
+    if not barcode_tag:
+        position_adjustment = '0'  # for samtools depth
+    print(f"position adjustment is {position_adjustment} (barcode_tag is {barcode_tag})")
         
     # Generate the Bash command for processing
     bash_command = f"""#!/bin/bash
