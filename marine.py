@@ -33,7 +33,7 @@ remove_softclipped_bases,find
 from utils import get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, \
 pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written, \
-make_depth_command_script, generate_and_run_bash_merge, get_sailor_sites, \
+make_depth_command_script_single_cell, generate_and_run_bash_merge, get_sailor_sites, \
 concatenate_files, run_command, get_edits_with_coverage_df, zero_edit_found, delete_intermediate_files
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
@@ -197,11 +197,16 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
     ).format(output_folder, output_folder)
     run_command(combine_edit_sites_command)
 
+    
     all_depth_commands.append(combine_edit_sites_command)
 
     output_suffix = 'source_cells'
     
     if barcode_tag:
+        coverage_subfolder = '{}/coverage'.format(output_folder)
+        make_folder(coverage_subfolder)
+
+        # Single cell mode
         split_bed_file(
             f"{output_folder}/combined_{output_suffix}.bed",
             f"{output_folder}/combined_{output_suffix}_split_by_suffix",
@@ -209,9 +214,14 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
             output_suffix=output_suffix
         )
         
-    make_depth_command_script(paired_end, bam_filepaths, output_folder,
-                              all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores, barcode_tag=barcode_tag)
-
+        make_depth_command_script_single_cell(paired_end, bam_filepaths, output_folder,
+                                  all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores, barcode_tag=barcode_tag)
+        
+    else:
+        # Bulk mode, we will not split the bed and simply use samtools depth on the combined.bed
+        samtools_depth_command = f"samtools depth -b {output_folder}/combined_source_cells.bed {bam_filepath} > {output_folder}/depths_source_cells.txt"
+        run_command(samtools_depth_command)
+        
 
     print("Concatenating edit info files...")
     concatenate_files(output_folder, "edit_info/*edit_info.tsv",
@@ -223,10 +233,12 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
     header_columns = ['barcode', 'contig', 'position', 'ref', 'alt',
                       'read_id', 'strand', 'coverage']
 
+
     generate_and_run_bash_merge(output_folder,
                                 '{}/final_edit_info_no_coverage.tsv'.format(output_folder),
                             '{}/depths_source_cells.txt'.format(output_folder), 
-                            '{}/final_edit_info.tsv'.format(output_folder), header_columns)
+                            '{}/final_edit_info.tsv'.format(output_folder), 
+                                header_columns)
     
     coverage_total_time = time.perf_counter() - coverage_start_time
     
@@ -425,9 +437,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
         
-        coverage_subfolder = '{}/coverage'.format(output_folder)
-        make_folder(coverage_subfolder)
-        
         # We want to run the samtools depth command for each of the reconfigured bam files
         reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
         
@@ -553,15 +562,16 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                 output_suffix=output_suffix
             )
 
-        make_depth_command_script(paired_end,
-                                  reconfigured_bam_filepaths, 
-                                  output_folder, 
-                                  output_suffix=output_suffix,
-                                  run=True,
-                                  pivot=True,
-                                  processes=cores,
-                                  barcode_tag=barcode_tag
-                                 )
+        make_depth_command_script_single_cell(
+            paired_end,
+            reconfigured_bam_filepaths, 
+            output_folder, 
+            output_suffix=output_suffix,
+            run=True,
+            pivot=True,
+            processes=cores,
+            barcode_tag=barcode_tag
+        )
         
     if not keep_intermediate_files:
         pretty_print("Deleting intermediate files...", style="-")

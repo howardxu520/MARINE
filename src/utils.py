@@ -898,7 +898,7 @@ def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', 
 
 
 
-def make_depth_command_script(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
+def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
                               output_suffix='', run=False, pivot=False, processes=4, barcode_tag=None):
     """
     Main function to generate and execute samtools depth commands, and optionally pivot and merge matrices.
