@@ -221,7 +221,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
         if paired_end:
             paired_end_flag = '-s '
         else:
-            paired_end_flag = 's'
+            paired_end_flag = ''
             
         # Bulk mode, we will not split the bed and simply use samtools depth on the combined.bed
         samtools_depth_command = f"samtools depth {paired_end_flag}-a -b {output_folder}/combined_source_cells.bed {bam_filepath} > {output_folder}/depths_source_cells.txt"
@@ -243,7 +243,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
                                 '{}/final_edit_info_no_coverage.tsv'.format(output_folder),
                             '{}/depths_source_cells.txt'.format(output_folder), 
                             '{}/final_edit_info.tsv'.format(output_folder), 
-                                header_columns)
+                                header_columns, paired_end=paired_end)
     
     coverage_total_time = time.perf_counter() - coverage_start_time
     

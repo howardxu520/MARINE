@@ -652,15 +652,20 @@ def concat_and_write_bams_wrapper(params):
     concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
 
 
-def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns):
+def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns, paired_end=False):
     # Convert header list into a tab-separated string
     header = "\t".join(header_columns)
 
+    position_adjustment = '1'
+    if paired_end:
+        position_adjustment = '0' 
+    print(f"position adjustment is {position_adjustment} (paired_end is {paired_end})")
+        
     # Generate the Bash command for processing
     bash_command = f"""#!/bin/bash
     # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
     # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2+1, $3, $1":"($2+1)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
+    awk -v OFS='\\t' '{{print $1, $2+{position_adjustment}, $3, $1":"($2+{position_adjustment})}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
     
     # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
     sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
