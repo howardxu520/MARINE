@@ -218,8 +218,13 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
                                   all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores, barcode_tag=barcode_tag)
         
     else:
+        if paired_end:
+            paired_end_flag = '-s '
+        else:
+            paired_end_flag = 's'
+            
         # Bulk mode, we will not split the bed and simply use samtools depth on the combined.bed
-        samtools_depth_command = f"samtools depth -b {output_folder}/combined_source_cells.bed {bam_filepath} > {output_folder}/depths_source_cells.txt"
+        samtools_depth_command = f"samtools depth {paired_end_flag}-a -b {output_folder}/combined_source_cells.bed {bam_filepath} > {output_folder}/depths_source_cells.txt"
         run_command(samtools_depth_command)
         
 
