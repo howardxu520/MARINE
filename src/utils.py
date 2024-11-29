@@ -885,7 +885,7 @@ def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', 
         else:
             # bulk case
             bed_filepath = f"{output_folder}/combined{output_suffix}.bed"
-            output_filepath = f"{output_folder}/coverage/depths{output_suffix}.txt"
+            output_filepath = f"{output_folder}/coverage/depths{output_suffix}_{bam_filename.split('_')[1]}.txt"
             
             
         if os.path.exists(bed_filepath):

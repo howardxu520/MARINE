@@ -153,6 +153,8 @@ def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix='
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
+    single_cell_approach = len(bam_filepaths) > 0
+    
     suffix_pairs = [
         (os.path.basename(bam).split("_")[0], 
          os.path.basename(bam).split("_")[1].split(".")[0]) for bam in bam_filepaths
@@ -198,7 +200,8 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
     all_depth_commands.append(combine_edit_sites_command)
 
     output_suffix = 'source_cells'
-    if len(bam_filepaths) > 1:
+    
+    if barcode_tag:
         split_bed_file(
             f"{output_folder}/combined_{output_suffix}.bed",
             f"{output_folder}/combined_{output_suffix}_split_by_suffix",
