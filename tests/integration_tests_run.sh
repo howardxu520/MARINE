@@ -34,7 +34,7 @@ echo "SC tests scripts"
 ls -lh $MARINE/tests/$tests_folder/scripts/
 
 
-for t in "only_5_cells_test" "only_5_cells_bulk_mode_test" "long_read_sc_test" "edge_case_test" "edge_case_dist_filter_test"
+for t in "only_5_cells_test" "only_5_cells_bulk_mode_test" "only_5_cells_all_cells_coverage_test" "long_read_sc_test" "edge_case_test" "edge_case_dist_filter_test"
 
 do
     echo $t

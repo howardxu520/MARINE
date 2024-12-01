@@ -665,10 +665,10 @@ def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_fi
     bash_command = f"""#!/bin/bash
     # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
     # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2+{position_adjustment}, $3, $1":"($2+{position_adjustment})}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
+    awk -v OFS='\\t' '{{print $1, $2+{position_adjustment}, $3, $1":"($2+{position_adjustment})}}' "{file2_path}" | sort -k4,4V | uniq > {output_folder}/depth_modified.tsv
     
     # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
-    sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
+    sort -k3,3V "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
 
     # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
 join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $4, $5, $6, $7, $8, $11}}' > "{output_file_path}"
@@ -822,27 +822,34 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
             chrom, start, end = fields[0], int(fields[1]), int(fields[2])
             regions.append((chrom, start, end))
 
-    print(f"\t{len(regions)} regions")
-    
-    with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
-        for chrom, start, end in regions:
-            # Get coverage, applying base quality filter
-            coverage = bam.count_coverage(
-                chrom, start, end, quality_threshold=0  # Mimics -Q 13 in samtools depth
-            )
-
-            # Calculate total coverage for each position and include zero-coverage positions
-            for pos in range(start, end):
-                total_coverage = sum(base[pos - start] for base in coverage)
-                out.write(f"{chrom}\t{pos}\t{total_coverage}\n")
-
-
-    if output_matrix_folder:
-        matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
-    
-        if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
-            # Pivot the depths output file into a matrix
-            pivot_depths_output(depths_file, matrix_output_file)
+    if len(regions) > 0:
+        print(f"\t{len(regions)} regions")
+        
+        with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
+            try:
+                for chrom, start, end in regions:
+                    # Get coverage, applying base quality filter
+                    coverage = bam.count_coverage(
+                        chrom, start, end, quality_threshold=0  # Mimics -Q 13 in samtools depth
+                    )
+        
+                    # Calculate total coverage for each position and include zero-coverage positions
+                    for pos in range(start, end):
+                        total_coverage = sum(base[pos - start] for base in coverage)
+                        out.write(f"{chrom}\t{pos}\t{total_coverage}\n")
+            except Exception as e:
+                # Return the exception and the arguments for debugging
+                raise RuntimeError(
+                        f"Error processing bam {bam_filepath} using bed {bed_filepath} at {chrom}:{start}-{end}, "
+                        f"outputting to {depths_file}: {e}"
+                    )
+                    
+        if output_matrix_folder:
+            matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
+        
+            if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
+                # Pivot the depths output file into a matrix
+                pivot_depths_output(depths_file, matrix_output_file)
 
 
 def run_pysam_count_coverage(args_list, processes):

@@ -149,6 +149,15 @@ def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix='
     """
     Split a BED file into multiple files based on suffixes in the first column.
     Each line is assigned to the appropriate file based on the suffix.
+
+    e.g.:
+    
+    10_AAACGAAAGTCACACT-1   6143263         6143264
+    10_AAACGAAAGTCACACT-1   11912575        11912576
+    10_AAACGAAAGTCACACT-1   12209751        12209752
+    10_AAACGAAAGTCACACT-1   13320235        13320236
+    10_AAACGAAAGTCACACT-1   27036085        27036086
+
     """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -171,9 +180,10 @@ def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix='
             for line in infile:
                 # Parse the first column to determine the suffix
                 columns = line.split()
+                
                 chrom = columns[0]  # Assuming the first column is the chromosome
                 for prefix, suffix in suffix_pairs:
-                    if chrom.startswith(prefix) and chrom.endswith(suffix):
+                    if chrom.startswith(f"{prefix}_") and chrom.endswith(suffix):
                         file_handles[prefix + suffix].write(line)
                         break
 
@@ -195,8 +205,9 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
         "awk 'NR > 1 {{print $2, $4-1, $4}}' OFS='\t' \"$file\"; "
         "done | sort -k1,1 -k2,2n -u > {}/combined_source_cells.bed;"
     ).format(output_folder, output_folder)
-    run_command(combine_edit_sites_command)
 
+    if not os.path.exists(f'{output_folder}/combined_source_cells.bed'):
+        run_command(combine_edit_sites_command)
     
     all_depth_commands.append(combine_edit_sites_command)
 
@@ -447,11 +458,11 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             print("Deleting overall_label_to_list_of_contents...")
             del overall_label_to_list_of_contents
 
-    
-    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-        f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
-        for k, v in overall_counts_summary_df.items():
-            f.write(f'{k}\t{v}\n') 
+    if not coverage_only:
+        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+            f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
+            for k, v in overall_counts_summary_df.items():
+                f.write(f'{k}\t{v}\n') 
 
         f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
 
