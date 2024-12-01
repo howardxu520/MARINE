@@ -391,7 +391,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         f.write('min_read_quality\t{}\n'.format(min_read_quality))
         f.write('min_dist_from_end\t{}\n'.format(min_dist_from_end))
         f.write('skip_coverage\t{}\n'.format(skip_coverage))
-        
+
+    overall_total_reads_processed = 0
     if not (coverage_only or filtering_only):
         if barcode_whitelist_file:
             barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
@@ -464,7 +465,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             for k, v in overall_counts_summary_df.items():
                 f.write(f'{k}\t{v}\n') 
 
-        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
+            f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
 
     if not filtering_only and not skip_coverage:
         # Coverage calculation
