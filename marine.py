@@ -300,64 +300,115 @@ def generate_bedgraphs(final_site_level_information_df, conversion_search, outpu
         sites_for_conversion_bedgraph_cols.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
 
 
-def generate_combined_sites_bed_for_all_cells(output_folder, strand_conversion="A>G"):
-    # go from:
-    #
-    # 9_GATCCCTCAGTAACGG-1	3000447	3000448
-    # 9_CATCCCTCAGTAACGA-1	3000468	3000469
-    # 2_CATCCCTCAGTAACGA-1	3000451	3000452
-    # 
-    # to:
-    # 
-    # 9_GATCCCTCAGTAACGG-1	3000447	3000448
-    # 9_GATCCCTCAGTAACGG-1	3000468	3000469
-    # 9_CATCCCTCAGTAACGA-1	3000447	3000448
-    # 9_CATCCCTCAGTAACGA-1	3000468	3000469
-    # 2_CATCCCTCAGTAACGA-1	3000451	3000452
+def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suffix):
+    """
+    Prepares the chromosome-suffix combinations for multiprocessing.
+    For each edited position in a given barcode, we want to look at the coverage at that
+    position for that chromosome across all the other barcodes. 
     
-    # Input and output files
+    Args:
+        df (pd.DataFrame): Filtered DataFrame containing edit data.
+        bam_filepaths (list): List of BAM filepaths to extract suffix pairs.
+        output_folder (str): Path to the output folder for split BED files.
+        output_suffix (str): Suffix for output files.
+
+    Returns:
+        list: List of tuples for processing.
+    """
+    # Extract prefix and suffix from BAM filenames
+    suffix_pairs = [
+        (os.path.basename(bam).split("_")[0], os.path.basename(bam).split("_")[1].split(".")[0])
+        for bam in bam_filepaths
+    ]
+    print(f"suffix_pairs is {suffix_pairs}")
+    
+    # Unique chromosomes in the dataset
+    unique_chromosomes = df['contig'].unique()
+
+    # Prepare combinations of chromosomes and suffix pairs
+    combinations = []
+    for chrom in unique_chromosomes:
+        print(f"\tChecking {chrom}...")
+
+        chrom = str(chrom)
+        df['contig'] = df['contig'].astype(str)
+        df_for_chrom = df[df['contig'] == chrom]
+        unique_positions = df_for_chrom.position.unique()
+        
+        for prefix, suffix in suffix_pairs:
+            
+            if prefix == chrom:
+                print(f"\t\tGenerating for ({prefix},{suffix})")                
+                df_for_prefix_suffix =  df_for_chrom[df_for_chrom['barcode'].str.endswith(suffix)]
+                unique_barcodes = df_for_prefix_suffix.barcode.unique()
+                
+                combinations.append((chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix))
+    
+                print(f"\t\t\t{prefix}_{suffix}: Unique positions: {len(unique_positions)}, Unique barcodes: {len(unique_barcodes)}")
+            
+    return combinations
+
+def process_combination_for_split(args):
+    """
+    Processes a single combination of chromosome, prefix, suffix, positions, and barcodes 
+    to write split BED files.
+
+    Args:
+        args (tuple): Contains chromosome, prefix, suffix, positions, barcodes, 
+                      output folder, and output suffix.
+    """
+    chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix = args
+
+    # Output file path
+    output_file = os.path.join(output_folder, f"combined_{output_suffix}_{prefix}_{suffix}.bed")
+
+    # Write combinations directly to the file
+    with open(output_file, "w") as f:
+        for position in unique_positions:
+            for barcode in unique_barcodes:
+                contig = f"{chrom}_{barcode}"  # Construct contig using chromosome and barcode
+                f.write(f"{contig}\t{position-1}\t{position}\n")
+
+    print(f"\t\t\t>>> Processed {chrom}, {prefix}_{suffix} -> {output_file}")
+
+
+def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, strand_conversion, processes=4, output_suffix="all_cells"):
+    """
+    Generates combined BED files for all edit sites and splits them into suffix-specific files.
+
+    Args:
+        output_folder (str): Path to the output folder.
+        bam_filepaths (list): List of BAM filepaths for suffix extraction.
+        strand_conversion (str): Strand conversion type (e.g., 'A>G').
+        processes (int): Number of multiprocessing workers.
+        output_suffix (str): Suffix for output files.
+    """
     input_file = f"{output_folder}/final_filtered_site_info.tsv"
-    output_file = f"{output_folder}/combined_all_cells.bed"
-    
-    # Load the input data
     df = pd.read_csv(input_file, sep="\t")
-    print(f"Found {len(df)} total edits...")
 
-
+    # Filter by strand conversion
     df = df[df['strand_conversion'] == strand_conversion]
     print(f"Running all positions for {len(df)} {strand_conversion} edits")
+
+    # Prepare combinations for multiprocessing
+    split_bed_folder = f"{output_folder}/combined_{output_suffix}_split_by_suffix"
+    os.makedirs(split_bed_folder, exist_ok=True)
     
-    df['chromosome'] = df['contig'].astype(str)
-    df['contig'] = df['contig'].astype(str) + '_' + df['barcode'].astype(str)
+    # Cleanup existing .bed files in the output folder
+    existing_bed_files = glob(os.path.join(split_bed_folder, "*.bed"))
+    if existing_bed_files:
+        print(f"Found {len(existing_bed_files)} existing .bed files. Removing...")
+        for file in existing_bed_files:
+            os.remove(file)
+    print("Existing .bed files removed. Starting fresh.")
     
-    unique_chromosomes = df['chromosome'].unique()
-    print("Unique chromosomes found: {}".format(unique_chromosomes))
+    combinations = prepare_combinations_for_split(df, bam_filepaths, f"{output_folder}/combined_{output_suffix}_split_by_suffix", output_suffix)
 
-    total_positions = 0
-    for chromosome in unique_chromosomes: 
-        # Permute only within chromosome
-        
-        df_for_chromosome = df[df['chromosome'] == str(chromosome)]
-        # Create unique lists:
-        unique_contigs = df_for_chromosome["contig"].unique()  # Unique contig pairs, within this chromosome
+    # Run the processing with multiprocessing
+    with Pool(processes=processes) as pool:
+        pool.map(process_combination_for_split, combinations)
 
-        print("\n{} unique_contigs for chromosome {}".format(len(unique_contigs), chromosome))
-        
-        unique_positions = set(df_for_chromosome["position"].tolist())  # Unique location pairs
-
-        print(f'unique_positions: {len(unique_positions)}, unique_contigs: {len(unique_contigs)}')
-
-        positions_for_chromosome = len(unique_positions) * len(unique_contigs)
-        total_positions += positions_for_chromosome
-        print('\ttotal_positions: {}\n'.format(positions_for_chromosome))
-        # Open the output file and write combinations line by line
-        with open(output_file, "a") as f:
-            for contig in unique_contigs:
-                for position in unique_positions:
-                    f.write(f"{contig}\t{position-1}\t{position}\n")
-    print("Overall positions: {}\n\n".format(total_positions))
-          
-    print(f"Output written to {output_file}")
+    print(f"All split BED files generated in {output_folder}/combined_{output_suffix}_split_by_suffix")
 
 
     
@@ -392,8 +443,19 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         f.write('min_dist_from_end\t{}\n'.format(min_dist_from_end))
         f.write('skip_coverage\t{}\n'.format(skip_coverage))
 
-    overall_total_reads_processed = 0
-    if not (coverage_only or filtering_only):
+    
+    # Check if filtering step finished
+    final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
+    final_path_already_exists = False
+    final_annotated_path_already_exists = False
+
+    if os.path.exists(final_filtered_sites_path):
+        print("{} exists... skipping edit finding.".format(final_filtered_sites_path))
+        final_path_already_exists = True
+
+    # Edit finding
+    if not (coverage_only or filtering_only) and not final_path_already_exists:
+        overall_total_reads_processed = 0
         if barcode_whitelist_file:
             barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
         else:
@@ -459,7 +521,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             print("Deleting overall_label_to_list_of_contents...")
             del overall_label_to_list_of_contents
 
-    if not coverage_only:
+        
         with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
             f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
             for k, v in overall_counts_summary_df.items():
@@ -467,14 +529,14 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
 
             f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
 
-    if not filtering_only and not skip_coverage:
+    reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+        
+    if not final_path_already_exists and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
         
         # We want to run the samtools depth command for each of the reconfigured bam files
-        reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
-        
         print("Running samtools depth on {} subset bam paths...".format(len(reconfigured_bam_filepaths)))
         total_time, total_seconds_for_contig_df = generate_depths(output_folder, reconfigured_bam_filepaths, paired_end=paired_end, barcode_tag=barcode_tag)
                                               
@@ -482,19 +544,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
          
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
     
-    # Check if filtering step finished
-    final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
-    final_path_already_exists = False
-    final_annotated_path_already_exists = False
-    
-    if os.path.exists(final_filtered_sites_path):
-        print("{} exists...".format(final_filtered_sites_path))
-        final_path_already_exists = True
-
-    # Filtering steps
-    if not final_path_already_exists:
-        print("Filtering..")
-
         all_edit_info_unique_position_with_coverage_df = get_edits_with_coverage_df(output_folder,
                                                                                     barcode_tag=barcode_tag)
         
@@ -543,7 +592,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         if len(final_site_level_information_df) == 0:
             output_zero_edit_files = zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder)
             return 'Done!'
-    
+
+    # Annotation option
     if final_path_already_exists and annotation_bedfile_path:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
@@ -553,12 +603,11 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                                                   sep='\t', index=False)
         final_annotated_path_already_exists = True
 
-
+    # Make plot of edit distributions
     if final_path_already_exists:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
         
-        # Make plot of edit distributions
         plot_folder = '{}/plots'.format(output_folder)
         make_folder(plot_folder)
         
@@ -579,23 +628,22 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
     print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
     print(f'Time elapsed: {time.time()-start_time:.2f}s')
 
-    if all_cells_coverage:
+    if final_path_already_exists and all_cells_coverage:
+        output_suffix = "all_cells"
         print("Calculating coverage at all edit sites in all cells...")
 
-        # Make a permuted version of the combined.bed file, such that every combination of contig
-        # and start-end is generated (this might be a very large file depending on number of edits and cells)
-        generate_combined_sites_bed_for_all_cells(output_folder)
-        
-         # We want to run the samtools depth command for each of the reconfigured bam files
-        bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
-        output_suffix = "all_cells"
-        if len(bam_filepaths) > 1:
-            split_bed_file(
-                f"{output_folder}/combined_{output_suffix}.bed",
-                f"{output_folder}/combined_{output_suffix}_split_by_suffix",
-                bam_filepaths, 
-                output_suffix=output_suffix
-            )
+        # Define the strand conversion type (e.g., 'A>G')
+        strand_conversion = "A>G"
+    
+        # Get the list of BAM file paths
+        bam_filepaths = glob(f"{output_folder}/split_bams/*/*.bam")
+    
+        # Generate and split BED files using multiprocessing
+        generate_and_split_bed_files_for_all_edits(output_folder,
+                                                   bam_filepaths, 
+                                                   strand_conversion="A>G",
+                                                   processes=cores, 
+                                                   output_suffix=output_suffix)
 
         make_depth_command_script_single_cell(
             paired_end,
