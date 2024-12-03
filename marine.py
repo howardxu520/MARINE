@@ -9,8 +9,8 @@ import pandas as pd
 import polars as pl
 import psutil
 import pysam
-from scipy.special import betainc
 import shutil
+import subprocess
 import sys
 from sys import getsizeof
 import time
@@ -32,70 +32,14 @@ remove_softclipped_bases,find
 
 from utils import get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, \
-pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written
+pretty_print, read_barcode_whitelist_file, get_contigs_that_need_bams_written, \
+make_depth_command_script_single_cell, generate_and_run_bash_merge, get_sailor_sites, \
+concatenate_files, run_command, get_edits_with_coverage_df, zero_edit_found, delete_intermediate_files
 
 from core import run_edit_identifier, run_bam_reconfiguration, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information
 
 from annotate import annotate_sites, get_strand_specific_conversion 
-
-def zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder):
-    print("No edits found.")
-    sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
-    sites_empty_df = pd.DataFrame(columns=sites_columns)
-    sites_empty_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), sep='\t', index=False)
-
-    Annotated_sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion','feature_name','feature_type','feature_strand']
-    annotated_sites_empty_df = pd.DataFrame(columns=Annotated_sites_columns)
-    annotated_sites_empty_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), sep='\t', index=False)
-
-    empty_df = pd.DataFrame()
-    if len(sailor_list) > 0:
-        for conversion in sailor_list:
-            conversion_search = conversion[0] + '>' + conversion[1]
-            empty_df.to_csv('{}/sailor_style_sites_{}.bed'.format(
-                output_folder, 
-                conversion_search.replace(">", "-")), 
-                header=False, index=False, sep='\t')
-
-    if len(bedgraphs_list) > 0:
-        bedgraph_folder = '{}/bedgraphs'.format(output_folder)
-        make_folder(bedgraph_folder)
-        for conversion in bedgraphs_list:
-            conversion_search = conversion[0] + '>' + conversion[1]
-            empty_df.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
-            
-    current, peak = tracemalloc.get_traced_memory()
-    
-    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-        f.write(f'sites\t{len(final_site_level_information_df)}\n') 
-        f.write(f'peak_memory_mb\t{peak/1e6}\n') 
-        f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
-
-    print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
-    print(f'Time elapsed: {time.time()-start_time:.2f}s')
-
-    if not keep_intermediate_files:
-        pretty_print("Deleting intermediate files...", style="-")
-        delete_intermediate_files(output_folder)
-
-    pretty_print("Done!", style="+")
-    return 'Done'
-
-
-def delete_intermediate_files(output_folder):
-    to_delete = ['coverage', 'edit_info', 'split_bams', 'all_edit_info.tsv', 
-                 'concat_command.sh', 'depth_command.sh', 'combined.bed', 'merge_command.sh',
-                 'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
-                 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv']
-    for object in to_delete:
-        object_path = '{}/{}'.format(output_folder, object)
-
-        if os.path.exists(object_path):
-            if os.path.isfile(object_path):
-                os.remove(object_path)
-            else:
-                shutil.rmtree(object_path)
 
 
 def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[],
@@ -140,6 +84,7 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
     
     return overall_label_to_list_of_contents, results, total_seconds_for_reads_df, overall_total_reads, counts_summary_df
 
+    
 def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
                    verbose=False):
     # Only used for single-cell and/or long read reconfiguration of bams to optimize coverage calculation
@@ -148,7 +93,7 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
                                                                       split_bams_folder, 
                                                                       barcode_tag=barcode_tag,
-                                                                      number_of_expected_bams=number_of_expected_bams
+                                                                    number_of_expected_bams=number_of_expected_bams
                                                                      )
     if verbose:
         pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
@@ -167,56 +112,6 @@ def bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag
     return total_bam_generation_time, total_seconds_for_bams_df
     
     
-import subprocess 
-
-
-def concatenate_files(source_folder, file_pattern, output_filepath):
-    # Create the concatenation command with numeric sorting and header skipping
-    concat_command = (
-        f"for f in $(ls -v {source_folder}/{file_pattern}); do "
-        "tail -n +2 \"$f\"; "  # Skip the header row for each file
-        "done > {}".format(output_filepath)
-    )
-
-    # Write the command to a shell script
-    concat_bash = f"{source_folder}/concat_command.sh"
-    with open(concat_bash, 'w') as f:
-        f.write(concat_command)
-        
-    print("Concatenating files in numerical order without headers...")
-    subprocess.run(['bash', concat_bash])
-    print("Done concatenating.")
-
-
-def coverage_processing(output_folder, barcode_tag='CB', paired_end=False, verbose=False, cores=1, number_of_expected_bams=4,
-                       min_read_quality=0, bam_filepath=''):
-
-    # Single-cell or long read version:
-    edit_info_grouped_per_contig_combined = gather_edit_information_across_subcontigs(output_folder, 
-                                                                                      barcode_tag=barcode_tag,
-                                                                                      number_of_expected_bams=number_of_expected_bams
-                                                                                     )
-    
-    #if verbose:
-    #    print('edit_info_grouped_per_contig_combined', edit_info_grouped_per_contig_combined.keys())
-
-        
-    results, total_time, total_seconds_for_contig = run_coverage_calculator(edit_info_grouped_per_contig_combined, output_folder,
-                                                                            barcode_tag=barcode_tag,
-                                                                            paired_end=paired_end,
-                                                                            verbose=verbose,
-                                                                            processes=cores
-                                                                           )
-    concatenate_files(output_folder, "coverage/*.tsv", "{}/final_edit_info.tsv".format(output_folder))
-    
-    total_seconds_for_contig_df = pd.DataFrame.from_dict(total_seconds_for_contig, orient='index')
-    total_seconds_for_contig_df.columns = ['seconds']
-    total_seconds_for_contig_df['contig sections'] = total_seconds_for_contig_df.index
-    total_seconds_for_contig_df.index = range(len(total_seconds_for_contig_df))
-    
-    return results, total_time, total_seconds_for_contig_df
-    
-
 def print_marine_logo():
     logo_lines = [
     "::::    ::::      :::     :::::::::  ::::::::::: ::::    ::: :::::::::: ",
@@ -232,85 +127,6 @@ def print_marine_logo():
         
     pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
 
-def calculate_sailor_score(sailor_row):
-    edits = sailor_row['count']
-    num_reads = sailor_row['coverage']
-    original_base_counts = num_reads - edits
-    
-    cov_margin = 0.01
-    alpha, beta = 0, 0
-
-    num_failures = 0
-    failure_messages = []
-    try:
-        edit_frac = float(edits) / float(num_reads)
-    except Exception as e:
-        num_failures += 1
-        print("Bad Row: {}".format(sailor_row))
-        return None
-        
-    # calc smoothed counts and confidence
-    destination_base_smoothed = edits + alpha
-    origin_base_smoothed = original_base_counts + beta
-
-    ########  MOST IMPORTANT LINE  ########
-    # calculates the confidence of theta as
-    # P( theta < cov_margin | A, G) ~ Beta_theta(G, A)
-    confidence = 1 - betainc(destination_base_smoothed, origin_base_smoothed, cov_margin)
-    return confidence
-    
-
-def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_coverage=False):
-    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['strand_conversion'] == conversion]
-
-    if skip_coverage:
-        # Case where we want to skip coverage counting, we will just set it to -1 in the sailor-style output
-        coverage_col = "-1"
-        weird_sites = pd.DataFrame()
-    else:
-        # Normally, assume that there is a coverage column
-        coverage_col = final_site_level_information_df['coverage'].astype(str)
-
-        weird_sites = final_site_level_information_df[
-            (final_site_level_information_df.coverage == 0) |\
-            (final_site_level_information_df.coverage < final_site_level_information_df['count'])]
-    
-        print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
-            len(weird_sites)))
-              
-        final_site_level_information_df = final_site_level_information_df[
-        (final_site_level_information_df.coverage > 0) & \
-        (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
-        ]
-
-    
-    final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + coverage_col
-
-    if skip_coverage:
-        final_site_level_information_df['score'] = -1
-    else:
-        final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
-
-    final_site_level_information_df['start'] = final_site_level_information_df['position']
-    final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
-    
-    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
-    return final_site_level_information_df, weird_sites
-    
-
-def collate_edit_info_shards(output_folder):
-    edit_info_folder = "{}/edit_info".format(output_folder)
-    edit_info_files = glob("{}/*".format(edit_info_folder))
-    print("\tFound {} files in {}...".format(len(edit_info_files), edit_info_folder))
-    all_dfs = []
-    for f in edit_info_files:
-        edit_info_df = pd.read_csv(f, sep='\t')
-        all_dfs.append(edit_info_df)
-        
-    collated_df = pd.concat(all_dfs)
-    print("\tShape of collated edit info df: {}".format(collated_df.shape))
-    print("\tColumns of collated edit info df: {}".format(collated_df.columns))
-    return collated_df
 
 def get_broken_up_contigs(contigs, num_per_sublist):
     broken_up_contigs = []
@@ -329,43 +145,56 @@ def get_broken_up_contigs(contigs, num_per_sublist):
             broken_up_contigs.append(contig_sublist)
     return broken_up_contigs
 
-import subprocess
-
-
-import subprocess
-
-def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns):
-    # Convert header list into a tab-separated string
-    header = "\t".join(header_columns)
-
-    # Generate the Bash command for processing
-    bash_command = f"""#!/bin/bash
-    # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
-    # for join purposes, and sort by this column. Output in tab-separated format.
-    awk -v OFS='\\t' '{{print $1, $2-1, $3, $1":"($2)}}' "{file2_path}" | sort -k4,4n | uniq > {output_folder}/depth_modified.tsv
-    
-    # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
-    sort -k3,3n "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
-
-    # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
-join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $4, $5, $6, $7, $8, $11}}' > "{output_file_path}"
-
-    # Step 4: Add header to the output file
-    echo -e "{header}" | cat - "{output_file_path}" > temp && mv temp "{output_file_path}"
+def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix=''):
     """
+    Split a BED file into multiple files based on suffixes in the first column.
+    Each line is assigned to the appropriate file based on the suffix.
 
-    # Write the command to a shell script
-    bash_script_path = "{}/merge_command.sh".format(output_folder)
-    with open(bash_script_path, "w") as file:
-        file.write(bash_command)
+    e.g.:
+    
+    10_AAACGAAAGTCACACT-1   6143263         6143264
+    10_AAACGAAAGTCACACT-1   11912575        11912576
+    10_AAACGAAAGTCACACT-1   12209751        12209752
+    10_AAACGAAAGTCACACT-1   13320235        13320236
+    10_AAACGAAAGTCACACT-1   27036085        27036086
 
-    # Run the generated bash script
-    print("Running Bash merge script...")
-    subprocess.run(["bash", bash_script_path], check=True)
-    print(f"Merged file saved to {output_file_path}")
+    """
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
+    single_cell_approach = len(bam_filepaths) > 0
+    
+    suffix_pairs = [
+        (os.path.basename(bam).split("_")[0], 
+         os.path.basename(bam).split("_")[1].split(".")[0]) for bam in bam_filepaths
+    ]
+        
+    # Open file handles for each suffix
+    file_handles = {}
+    for prefix, suffix in suffix_pairs:
+        output_file = os.path.join(output_folder, f"combined_{output_suffix}_{prefix}_{suffix}.bed")
+        file_handles[prefix + suffix] = open(output_file, 'w')
 
-def generate_depths_with_samtools(output_folder, bam_filepaths):
+    try:
+        with open(input_bed_file, 'r') as infile:
+            for line in infile:
+                # Parse the first column to determine the suffix
+                columns = line.split()
+                
+                chrom = columns[0]  # Assuming the first column is the chromosome
+                for prefix, suffix in suffix_pairs:
+                    if chrom.startswith(f"{prefix}_") and chrom.endswith(suffix):
+                        file_handles[prefix + suffix].write(line)
+                        break
+
+    finally:
+        # Close all file handles
+        for handle in file_handles.values():
+            handle.close()
+            
+
+def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=None):
+    
     coverage_start_time = time.perf_counter()
 
     all_depth_commands = []
@@ -374,82 +203,221 @@ def generate_depths_with_samtools(output_folder, bam_filepaths):
         "echo 'concatenating bed file...';"
         "for file in {}/edit_info/*edit_info.tsv; do "
         "awk 'NR > 1 {{print $2, $4-1, $4}}' OFS='\t' \"$file\"; "
-        "done | sort -k1,1 -k2,2n -u > {}/combined.bed;"
+        "done | sort -k1,1 -k2,2n -u > {}/combined_source_cells.bed;"
     ).format(output_folder, output_folder)
+
+    if not os.path.exists(f'{output_folder}/combined_source_cells.bed'):
+        run_command(combine_edit_sites_command)
     
     all_depth_commands.append(combine_edit_sites_command)
+
+    output_suffix = 'source_cells'
     
-    for i, bam_filepath in enumerate(bam_filepaths):
-        depth_command = (
-        "echo 'running samtools depth on {}...';"
-        "samtools depth -a -b {}/combined.bed {} >> {}/coverage/depths.txt"
-    ).format(bam_filepath, output_folder, bam_filepath, output_folder)
-        all_depth_commands.append(depth_command)
+    if barcode_tag:
+        coverage_subfolder = '{}/coverage'.format(output_folder)
+        make_folder(coverage_subfolder)
+
+        # Single cell mode
+        split_bed_file(
+            f"{output_folder}/combined_{output_suffix}.bed",
+            f"{output_folder}/combined_{output_suffix}_split_by_suffix",
+            bam_filepaths,
+            output_suffix=output_suffix
+        )
         
-    depth_bash = '{}/depth_command.sh'.format(output_folder)
-    with open(depth_bash, 'w') as f:
-        for depth_command in all_depth_commands:
-            f.write('{}\n\n'.format(depth_command))
+        make_depth_command_script_single_cell(paired_end, bam_filepaths, output_folder,
+                                  all_depth_commands=all_depth_commands, output_suffix='source_cells', run=True, processes=cores, barcode_tag=barcode_tag)
         
-    print("Calculating depths...")
-    subprocess.run(['bash', depth_bash])
-    print("Done calculating depths.")
+    else:
+        if paired_end:
+            paired_end_flag = '-s '
+        else:
+            paired_end_flag = ''
+            
+        # Bulk mode, we will not split the bed and simply use samtools depth on the combined.bed
+        samtools_depth_command = f"samtools depth {paired_end_flag}-a -b {output_folder}/combined_source_cells.bed {bam_filepath} > {output_folder}/depths_source_cells.txt"
+        run_command(samtools_depth_command)
+        
 
     print("Concatenating edit info files...")
-    concatenate_files(output_folder, "edit_info/*edit_info.tsv", "{}/final_edit_info_no_coverage.tsv".format(output_folder))
+    concatenate_files(output_folder, "edit_info/*edit_info.tsv",
+                      "{}/final_edit_info_no_coverage.tsv".format(output_folder),
+                     run=True)
 
     print("Append the depth columns to the concatenated final_edit_info file...")
 
     header_columns = ['barcode', 'contig', 'position', 'ref', 'alt',
                       'read_id', 'strand', 'coverage']
 
+
     generate_and_run_bash_merge(output_folder,
                                 '{}/final_edit_info_no_coverage.tsv'.format(output_folder),
-                            '{}/coverage/depths.txt'.format(output_folder), 
-                            '{}/final_edit_info.tsv'.format(output_folder), header_columns)
+                            '{}/depths_source_cells.txt'.format(output_folder), 
+                            '{}/final_edit_info.tsv'.format(output_folder), 
+                                header_columns, barcode_tag=barcode_tag)
     
     coverage_total_time = time.perf_counter() - coverage_start_time
     
     total_seconds_for_contig_df = pd.DataFrame({'coverage_total_time': [coverage_total_time]})
     return coverage_total_time, total_seconds_for_contig_df
+        
 
-
-def get_edits_with_coverage_df(output_folder,
-                               barcode_tag=None, 
-                               paired_end=False):
-
-    # For paired end, which was calculated using the pysam coverage functions.
-    if paired_end:
-        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
-                                                                     index_col=0,
-                                                                     names=[
-                                                                         'barcode_position_index', 'barcode', 'contig', 'contig_position', 'position', 'ref', 'alt', 'read_id',
-                                                                         'strand', 'barcode_position', 
-                                                                         'coverage', 'source', 'position_barcode'], dtype={'coverage': int, 'position': int,
-                                                                                             'contig': str})
-
-    else:
-        # For bulk single-end or for single-cell, for which coverages were calculated using samtools depth.
-        all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
-                                                                     dtype={'coverage': int, 'position': int,
-                                                                                             'contig': str})
+def convert_sites_to_sailor(final_site_level_information_df, sailor_list, output_folder, skip_coverage):
+    # Output SAILOR-formatted file for use in FLARE downstream
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 1       629275  629276  0.966040688     2,30    +
+    # 1       629309  629310  2.8306e-05      1,1043  +
     
-    # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
-    # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
-    # as the barcode information is separately already present as it's own column in this dataframe. To ensure code continuity,
-    # this will still be true even with no barcode specified, in which case the contig will be <contig>_no_barcode
+    for conversion in sailor_list:
+        conversion_search = conversion[0] + '>' + conversion[1]
+        
+        print("Generating SAILOR-style bed outputs for conversion {}...".format(conversion))
+        
+        sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion_search, skip_coverage=skip_coverage)
+        sailor_sites = sailor_sites.drop_duplicates()
     
-    # Therefore: replace the contig with the part before the barcode
-    all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
+        print("{} final deduplicated {} SAILOR-formatted sites".format(len(sailor_sites), conversion_search))
+        sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+            output_folder, 
+            conversion_search.replace(">", "-")), 
+            header=False,
+            index=False,       
+            sep='\t')
 
-    return all_edit_info_unique_position_with_coverage_df
+
+def generate_bedgraphs(final_site_level_information_df, conversion_search, output_folder):
+    bedgraph_folder = '{}/bedgraphs'.format(output_folder)
+    make_folder(bedgraph_folder)
+    
+    pretty_print("Making bedgraphs for {} conversions...\n".format(bedgraphs_list))
+    for conversion in bedgraphs_list:
+        conversion_search = conversion[0] + '>' + conversion[1]
+        sites_for_conversion = final_site_level_information_df[final_site_level_information_df.conversion == conversion_search]
+        sites_for_conversion['edit_fraction'] = sites_for_conversion['count']/sites_for_conversion['coverage']
+        sites_for_conversion['start'] = sites_for_conversion['position'] - 1
+        sites_for_conversion_bedgraph_cols = sites_for_conversion[['contig', 'start', 'position', 'edit_fraction']]
+    
+        sites_for_conversion_bedgraph_cols.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
+
+
+def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suffix):
+    """
+    Prepares the chromosome-suffix combinations for multiprocessing.
+    For each edited position in a given barcode, we want to look at the coverage at that
+    position for that chromosome across all the other barcodes. 
+    
+    Args:
+        df (pd.DataFrame): Filtered DataFrame containing edit data.
+        bam_filepaths (list): List of BAM filepaths to extract suffix pairs.
+        output_folder (str): Path to the output folder for split BED files.
+        output_suffix (str): Suffix for output files.
+
+    Returns:
+        list: List of tuples for processing.
+    """
+    # Extract prefix and suffix from BAM filenames
+    suffix_pairs = [
+        (os.path.basename(bam).split("_")[0], os.path.basename(bam).split("_")[1].split(".")[0])
+        for bam in bam_filepaths
+    ]
+    print(f"suffix_pairs is {suffix_pairs}")
+    
+    # Unique chromosomes in the dataset
+    unique_chromosomes = df['contig'].unique()
+
+    # Prepare combinations of chromosomes and suffix pairs
+    combinations = []
+    for chrom in unique_chromosomes:
+        print(f"\tChecking {chrom}...")
+
+        chrom = str(chrom)
+        df['contig'] = df['contig'].astype(str)
+        df_for_chrom = df[df['contig'] == chrom]
+        unique_positions = df_for_chrom.position.unique()
         
-        
-        
+        for prefix, suffix in suffix_pairs:
+            
+            if prefix == chrom:
+                print(f"\t\tGenerating for ({prefix},{suffix})")                
+                df_for_prefix_suffix =  df_for_chrom[df_for_chrom['barcode'].str.endswith(suffix)]
+                unique_barcodes = df_for_prefix_suffix.barcode.unique()
+                
+                combinations.append((chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix))
+    
+                print(f"\t\t\t{prefix}_{suffix}: Unique positions: {len(unique_positions)}, Unique barcodes: {len(unique_barcodes)}")
+            
+    return combinations
+
+def process_combination_for_split(args):
+    """
+    Processes a single combination of chromosome, prefix, suffix, positions, and barcodes 
+    to write split BED files.
+
+    Args:
+        args (tuple): Contains chromosome, prefix, suffix, positions, barcodes, 
+                      output folder, and output suffix.
+    """
+    chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix = args
+
+    # Output file path
+    output_file = os.path.join(output_folder, f"combined_{output_suffix}_{prefix}_{suffix}.bed")
+
+    # Write combinations directly to the file
+    with open(output_file, "w") as f:
+        for position in unique_positions:
+            for barcode in unique_barcodes:
+                contig = f"{chrom}_{barcode}"  # Construct contig using chromosome and barcode
+                f.write(f"{contig}\t{position-1}\t{position}\n")
+
+    print(f"\t\t\t>>> Processed {chrom}, {prefix}_{suffix} -> {output_file}")
+
+
+def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, strand_conversion, processes=4, output_suffix="all_cells"):
+    """
+    Generates combined BED files for all edit sites and splits them into suffix-specific files.
+
+    Args:
+        output_folder (str): Path to the output folder.
+        bam_filepaths (list): List of BAM filepaths for suffix extraction.
+        strand_conversion (str): Strand conversion type (e.g., 'A>G').
+        processes (int): Number of multiprocessing workers.
+        output_suffix (str): Suffix for output files.
+    """
+    input_file = f"{output_folder}/final_filtered_site_info.tsv"
+    df = pd.read_csv(input_file, sep="\t")
+
+    # Filter by strand conversion
+    df = df[df['strand_conversion'] == strand_conversion]
+    print(f"Running all positions for {len(df)} {strand_conversion} edits")
+
+    # Prepare combinations for multiprocessing
+    split_bed_folder = f"{output_folder}/combined_{output_suffix}_split_by_suffix"
+    os.makedirs(split_bed_folder, exist_ok=True)
+    
+    # Cleanup existing .bed files in the output folder
+    existing_bed_files = glob(os.path.join(split_bed_folder, "*.bed"))
+    if existing_bed_files:
+        print(f"Found {len(existing_bed_files)} existing .bed files. Removing...")
+        for file in existing_bed_files:
+            os.remove(file)
+    print("Existing .bed files removed. Starting fresh.")
+    
+    combinations = prepare_combinations_for_split(df, bam_filepaths, f"{output_folder}/combined_{output_suffix}_split_by_suffix", output_suffix)
+
+    # Run the processing with multiprocessing
+    with Pool(processes=processes) as pool:
+        pool.map(process_combination_for_split, combinations)
+
+    print(f"All split BED files generated in {output_folder}/combined_{output_suffix}_split_by_suffix")
+
+
+    
 def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor_list=[], min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
         keep_intermediate_files=False,
         num_per_sublist=6,
-        skip_coverage=False, interval_length=2000000):
+        skip_coverage=False, interval_length=2000000,
+        all_cells_coverage=False
+       ):
         
     # Check to make sure the folder is empty, otherwise prompt for overwriting
     if any(os.scandir(output_folder)):
@@ -474,8 +442,20 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         f.write('min_read_quality\t{}\n'.format(min_read_quality))
         f.write('min_dist_from_end\t{}\n'.format(min_dist_from_end))
         f.write('skip_coverage\t{}\n'.format(skip_coverage))
-        
-    if not (coverage_only or filtering_only):
+
+    
+    # Check if filtering step finished
+    final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
+    final_path_already_exists = False
+    final_annotated_path_already_exists = False
+
+    if os.path.exists(final_filtered_sites_path):
+        print("{} exists... skipping edit finding.".format(final_filtered_sites_path))
+        final_path_already_exists = True
+
+    # Edit finding
+    if not (coverage_only or filtering_only) and not final_path_already_exists:
+        overall_total_reads_processed = 0
         if barcode_whitelist_file:
             barcode_whitelist = read_barcode_whitelist_file(barcode_whitelist_file)
         else:
@@ -532,7 +512,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                 pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
                 pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
                 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
+
+                
                 total_bam_generation_time, total_seconds_for_bams_df = bam_processing(overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
                 #total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
                 pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
@@ -540,71 +521,31 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             print("Deleting overall_label_to_list_of_contents...")
             del overall_label_to_list_of_contents
 
-    
-    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
-        f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
-        for k, v in overall_counts_summary_df.items():
-            f.write(f'{k}\t{v}\n') 
+        
+        with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+            f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
+            for k, v in overall_counts_summary_df.items():
+                f.write(f'{k}\t{v}\n') 
 
-        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
+            f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
 
-    if not filtering_only and not skip_coverage:
+    reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
+        
+    if not final_path_already_exists and not skip_coverage:
         # Coverage calculation
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Calculating coverage at edited sites, minimum read quality is {}...".format(min_read_quality), style='~')
         
-        coverage_subfolder = '{}/coverage'.format(output_folder)
-        make_folder(coverage_subfolder)
-        
-        if paired_end:
-            results, total_time, total_seconds_for_contig_df = coverage_processing(output_folder, 
-                                                                                   barcode_tag=barcode_tag, 
-                                                                                   paired_end=paired_end,
-                                                                                   verbose=verbose,
-                                                                                   cores=cores,
-                                                                                   number_of_expected_bams=number_of_expected_bams,
-                                                                                   min_read_quality=min_read_quality,
-                                                                                   bam_filepath=bam_filepath
-                                                                                  )
-        else:
-            # for bulk single-end or single-cell, we will just concatenate all the edits files into one big bed file, and then run samtools depth
-            if not barcode_tag:
-                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, [bam_filepath])
-            elif barcode_tag:
-                # for single-end, we want to run the samtools depth command for everyone of the reconfigured bam files
-                reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
-                print("Running samtools depth on {} reconfigured bam paths...".format(len(reconfigured_bam_filepaths)))
-                total_time, total_seconds_for_contig_df = generate_depths_with_samtools(output_folder, reconfigured_bam_filepaths)
-                                                  
-                
+        # We want to run the samtools depth command for each of the reconfigured bam files
+        print("Running samtools depth on {} subset bam paths...".format(len(reconfigured_bam_filepaths)))
+        total_time, total_seconds_for_contig_df = generate_depths(output_folder, reconfigured_bam_filepaths, paired_end=paired_end, barcode_tag=barcode_tag)
+                                              
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
          
         pretty_print("Total time to calculate coverage: {} minutes".format(round(total_time/60, 3)))
-
     
-    if skip_coverage:
-        # If we skip coverage steps, we have to just collate edit info results from the edit finding steps into one giant 
-        # final_edit_info.tsv file (where coverage is None)
-        pretty_print("Skipped coverage, so combining edit info alone...")
-        all_edit_info_unique_position_with_coverage_df = collate_edit_info_shards(output_folder)
-
-    
-    # Check if filtering step finished
-    final_filtered_sites_path = '{}/final_filtered_site_info.tsv'.format(output_folder)
-    final_path_already_exists = False
-    final_annotated_path_already_exists = False
-    
-    if os.path.exists(final_filtered_sites_path):
-        print("{} exists...".format(final_filtered_sites_path))
-        final_path_already_exists = True
-
-    # Filtering steps
-    if not final_path_already_exists:
-        print("Filtering..")
-
         all_edit_info_unique_position_with_coverage_df = get_edits_with_coverage_df(output_folder,
-                                                                                    barcode_tag=barcode_tag, 
-                                                                                    paired_end=paired_end)
+                                                                                    barcode_tag=barcode_tag)
         
         pretty_print("\tNumber of edits after filtering:\n\t{}".format(len(all_edit_info_unique_position_with_coverage_df)))
     
@@ -634,43 +575,11 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         
         if len(sailor_list) > 0:
             print("{} sites being converted to SAILOR format...".format(len(final_site_level_information_df)))
-
-            # Output SAILOR-formatted file for use in FLARE downstream
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            # 1       629275  629276  0.966040688     2,30    +
-            # 1       629309  629310  2.8306e-05      1,1043  +
-    
-            for conversion in sailor_list:
-                conversion_search = conversion[0] + '>' + conversion[1]
-                
-                print("Generating SAILOR-style bed outputs for conversion {}...".format(conversion))
-                
-                sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion_search, skip_coverage=skip_coverage)
-                sailor_sites = sailor_sites.drop_duplicates()
-    
-                print("{} final deduplicated {} SAILOR-formatted sites".format(len(sailor_sites), conversion_search))
-                sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
-                    output_folder, 
-                    conversion_search.replace(">", "-")), 
-                    header=False,
-                    index=False,       
-                    sep='\t')
-
+            convert_sites_to_sailor(final_site_level_information_df, sailor_list, output_folder, skip_coverage)
+           
         if len(bedgraphs_list) > 0:
             # Make plot of edit distributions
-            bedgraph_folder = '{}/bedgraphs'.format(output_folder)
-            make_folder(bedgraph_folder)
-            
-            pretty_print("Making bedgraphs for {} conversions...\n".format(bedgraphs_list))
-            for conversion in bedgraphs_list:
-                conversion_search = conversion[0] + '>' + conversion[1]
-                sites_for_conversion = final_site_level_information_df[final_site_level_information_df.conversion == conversion_search]
-                sites_for_conversion['edit_fraction'] = sites_for_conversion['count']/sites_for_conversion['coverage']
-                sites_for_conversion['start'] = sites_for_conversion['position'] - 1
-                sites_for_conversion_bedgraph_cols = sites_for_conversion[['contig', 'start', 'position', 'edit_fraction']]
-
-                sites_for_conversion_bedgraph_cols.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False,
-                                                                 header=False)
+            generate_bedgraphs(final_site_level_information_df, bedgraphs_list, output_folder)
                 
     if not annotation_bedfile_path:
         print("annotation_bedfile_path argument not provided ...\
@@ -683,7 +592,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         if len(final_site_level_information_df) == 0:
             output_zero_edit_files = zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder)
             return 'Done!'
-    
+
+    # Annotation option
     if final_path_already_exists and annotation_bedfile_path:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
@@ -693,12 +603,11 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                                                   sep='\t', index=False)
         final_annotated_path_already_exists = True
 
-
+    # Make plot of edit distributions
     if final_path_already_exists:
         final_site_level_information_df = pd.read_csv('{}/final_filtered_site_info.tsv'.format(output_folder), 
                                                   sep='\t')
         
-        # Make plot of edit distributions
         plot_folder = '{}/plots'.format(output_folder)
         make_folder(plot_folder)
         
@@ -719,6 +628,34 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
     print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
     print(f'Time elapsed: {time.time()-start_time:.2f}s')
 
+    if final_path_already_exists and all_cells_coverage:
+        output_suffix = "all_cells"
+        print("Calculating coverage at all edit sites in all cells...")
+
+        # Define the strand conversion type (e.g., 'A>G')
+        strand_conversion = "A>G"
+    
+        # Get the list of BAM file paths
+        bam_filepaths = glob(f"{output_folder}/split_bams/*/*.bam")
+    
+        # Generate and split BED files using multiprocessing
+        generate_and_split_bed_files_for_all_edits(output_folder,
+                                                   bam_filepaths, 
+                                                   strand_conversion="A>G",
+                                                   processes=cores, 
+                                                   output_suffix=output_suffix)
+
+        make_depth_command_script_single_cell(
+            paired_end,
+            reconfigured_bam_filepaths, 
+            output_folder, 
+            output_suffix=output_suffix,
+            run=True,
+            pivot=True,
+            processes=cores,
+            barcode_tag=barcode_tag
+        )
+        
     if not keep_intermediate_files:
         pretty_print("Deleting intermediate files...", style="-")
         delete_intermediate_files(output_folder)
@@ -772,6 +709,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_per_sublist', dest='num_per_sublist', type=int, default=6)
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
+    parser.add_argument('--all_cells_coverage', dest='all_cells_coverage', action='store_true')
     parser.add_argument('--max_edits_per_read', type=int, default=None)
     parser.add_argument('--num_intervals_per_contig', type=int, default=200, help='Deprecated')
     parser.add_argument('--interval_length', type=int, default=2000000, help='Length of intervals split analysis into...')
@@ -795,8 +733,9 @@ if __name__ == '__main__':
     verbose = args.verbose
     keep_intermediate_files = args.keep_intermediate_files
     paired_end = args.paired_end
+    all_cells_coverage = args.all_cells_coverage
     skip_coverage = args.skip_coverage
-    
+
     barcode_tag = args.barcode_tag
     min_base_quality = args.min_base_quality
     min_read_quality = args.min_read_quality
@@ -808,6 +747,19 @@ if __name__ == '__main__':
     num_per_sublist = args.num_per_sublist
 
 
+    # all_cells_coverage only applies for single cell case
+    if not barcode_tag:
+        if all_cells_coverage == True:
+            all_cells_coverage = False
+        
+    """
+    # Convert all_cells_coverage into list of conversions for which to output all cell info
+    if not all_cells_coverage is None:
+        all_cells_coverage_list = all_cells_coverage.upper().replace('I', 'G').split(',')
+        for c in all_cells_coverage_list:
+            assert(c in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG']) 
+    """
+    
     # Convert bedgraphs argument into list of conversions
     if not bedgraphs is None:
         if barcode_tag in ['CB', 'IB']:
@@ -882,7 +834,8 @@ if __name__ == '__main__':
                   "\tVerbose:\t{}".format(verbose),
                   "\tKeep intermediate files:\t{}".format(keep_intermediate_files),
                   "\tSkip coverage?:\t{}".format(skip_coverage),
-                  "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist)
+                  "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist),
+                  "\tCalculate coverage in all barcodes?: \t{}\n".format(all_cells_coverage)
                  ])
 
     if not paired_end:
@@ -920,7 +873,8 @@ if __name__ == '__main__':
         skip_coverage=skip_coverage,
         keep_intermediate_files=keep_intermediate_files,
         num_per_sublist=num_per_sublist,
-        interval_length=interval_length
+        interval_length=interval_length,
+        all_cells_coverage=all_cells_coverage
        )
     
     

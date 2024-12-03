@@ -15,4 +15,4 @@ $MARINE/tests/singlecell_tests/only_5_cells_test \
 4 \
 --barcode_tag "CB" \
 --strandedness 2 \
---contigs "9" --interval_length 32000000
+--keep_intermediate_files --contigs "9" --interval_length 32000000

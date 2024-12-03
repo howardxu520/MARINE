@@ -6,10 +6,16 @@ import polars as pl
 import pandas as pd
 import numpy as np
 import sys
+import subprocess
 from collections import OrderedDict, defaultdict
 from itertools import product
+from scipy.special import betainc
+import shutil
+from multiprocessing import Pool
+import multiprocessing
+import time
 
-cb_n = 2
+CB_N = 1
 
 def generate_permutations_list_for_CB(n):
     """
@@ -30,10 +36,9 @@ def generate_permutations_list_for_CB(n):
     result = [f"{combo}-1" for combo in combinations]
     
     return result
-    
-    
+
 suffixes = {
-    'CB': generate_permutations_list_for_CB(cb_n),
+    'CB': generate_permutations_list_for_CB(CB_N),
     'IS': [
         "00","01","02","03","04","05","06","07","08","09",
         "10","11","12","13","14","15","16","17","18","19",
@@ -99,7 +104,7 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
         subsets_per_contig[contig_label] += 1
 
     if barcode_tag == 'CB':
-        number_of_expected_bams = 4
+        number_of_expected_bams = 4**CB_N
     else:
         number_of_expected_bams = number_of_expected_bams
         
@@ -577,6 +582,18 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     print("\t{} suffixes".format(len(suffix_options)))
     
     for suffix in suffix_options:
+        # Make a sub-subfolder to put the bams for this specific contig
+        contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
+        if not os.path.exists(contig_folder):
+            os.mkdir(contig_folder)
+            
+            
+        bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
+
+        if os.path.exists(f"{bam_file_name}.bai"):
+            print(f"{bam_file_name}.bai, skipping...")
+            return
+        
         if barcode_tag:
             all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
         else:
@@ -614,15 +631,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
                     reads_count_for_suffix
                     ))
                 sys.exit(1)
-            
-        
-        # Make a sub-subfolder to put the bams for this specific contig
-        contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
-        if not os.path.exists(contig_folder):
-            os.mkdir(contig_folder)
-            
-            
-        bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
         
         # Write, sort and index bam immediately
         write_reads_to_file(reads_deduped, bam_file_name, header_string) 
@@ -634,6 +642,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             rm_bam(bam_file_name)
         except Exception as e:
             print("Failed at indexing {}".format(bam_file_name))
+            raise e
             
     
 def concat_and_write_bams_wrapper(params):
@@ -641,3 +650,475 @@ def concat_and_write_bams_wrapper(params):
     
     # print("df_dict keys: {}".format(df_dict.keys()))
     concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag=barcode_tag, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
+
+
+def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns, barcode_tag=None):
+    # Convert header list into a tab-separated string
+    header = "\t".join(header_columns)
+
+    position_adjustment = '1' # for samtools view
+    if not barcode_tag:
+        position_adjustment = '0'  # for samtools depth
+    print(f"position adjustment is {position_adjustment} (barcode_tag is {barcode_tag})")
+        
+    # Generate the Bash command for processing
+    bash_command = f"""#!/bin/bash
+    # Step 1: Adjust the depths file by adding a new column that incorporates both contig and position
+    # for join purposes, and sort by this column. Output in tab-separated format.
+    awk -v OFS='\\t' '{{print $1, $2+{position_adjustment}, $3, $1":"($2+{position_adjustment})}}' "{file2_path}" | sort -k4,4V | uniq > {output_folder}/depth_modified.tsv
+    
+    # Step 2: Sort the first file numerically by the join column (the column incuding both contig and position information)
+    sort -k3,3V "{file1_path}" | uniq > {output_folder}/final_edit_info_no_coverage_sorted.tsv
+
+    # Step 3: Join the files on the specified columns, output all columns, and select necessary columns with tab separation
+join -1 3 -2 4 -t $'\\t' {output_folder}/final_edit_info_no_coverage_sorted.tsv {output_folder}/depth_modified.tsv | awk -v OFS='\\t' '{{print $2, $3, $4, $5, $6, $7, $8, $11}}' > "{output_file_path}"
+
+    # Step 4: Add header to the output file
+    echo -e "{header}" | cat - "{output_file_path}" > temp && mv temp "{output_file_path}"
+    """
+
+    # Write the command to a shell script
+    bash_script_path = "{}/merge_command.sh".format(output_folder)
+    with open(bash_script_path, "w") as file:
+        file.write(bash_command)
+
+    # Run the generated bash script
+    print("Running Bash merge script...")
+    subprocess.run(["bash", bash_script_path], check=True)
+    print(f"Merged file saved to {output_file_path}")
+            
+
+def generate_empty_matrix_file(matrix_output_filepath):
+    pass
+
+
+def pivot_depths_output(depths_input_filepath, matrix_output_filepath):
+    """
+    Transform depths data into a pivoted matrix with reformatted row and column labels.
+
+        The rows will look like this:
+        
+        9_GATCCCTCAGTAACGG-1	3000448	1
+        9_GATCCCTCAGTAACGG-1	3000469	1
+        9_GATCCCTCAGTAACGG-1	3000508	3
+        
+        We want them to look like this:
+        
+        GATCCCTCAGTAACGG-1	9:3000448	1
+        GATCCCTCAGTAACGG-1	9:3000469	1
+        GATCCCTCAGTAACGG-1	9:3000508	3
+        
+        # And after the pivot:
+                        9:3000448 9:3000469 9:3000508
+        GATCCCTCAGTAACGG        1         1         3
+    
+    """
+    # Read the universal coverage data
+    df = pd.read_csv(depths_input_filepath, sep="\t", header=None, names=["Contig", "Position", "Coverage"])
+
+
+    # Extract sample ID from the Contig and create a combined column for Position
+    df["Barcode"] = df["Contig"].str.split("_", n=1).str[1]  # Extract everything after the first underscore
+    df["CombinedPosition"] = df["Contig"].str.split("_", n=1).str[0] + ":" + df["Position"].astype(str)
+
+    # Drop the original Contig and Position columns (optional, for clarity)
+    df = df[["Barcode", "CombinedPosition", "Coverage"]]
+
+    # Pivot the data to make a matrix of Sample x CombinedPosition with values being Coverage
+    pivot = df.pivot(index="CombinedPosition", columns="Barcode", values="Coverage").fillna(0)
+    
+    # Write to output
+    pivot.to_csv(matrix_output_filepath, sep="\t")
+    
+
+
+def run_command(command):
+    # Run the samtools depth command
+    subprocess.run(command, shell=True, check=True)
+
+
+def merge_files_by_chromosome(args):
+    """
+    Helper function to merge files for a single chromosome.
+    """
+    chromosome, files, output_folder = args
+    first_file = files[0]
+    other_files = files[1:]
+    merged_file = os.path.join(output_folder, f"{chromosome}_comprehensive_coverage_matrix.tsv")
+
+    # Prepare the paste command
+    strip_headers_command = " ".join(
+        [f"<(cut -f2- {file})" for file in other_files]
+    )
+    paste_command = f"paste {first_file} {strip_headers_command} > {merged_file}"
+
+    # Use bash to execute the paste command
+    run_command(f"bash -c '{paste_command}'")
+    print(f"Columnar merge complete for {chromosome}. Output saved to {merged_file}.")
+
+
+def prepare_matrix_files_multiprocess(output_matrix_folder, 
+                                      output_folder, 
+                                      processes=4):
+    """
+    Merges matrix files column-wise, grouping by chromosome, using multiprocessing.
+    """
+    print("Merging matrices column-wise by chromosome...")
+
+    # Group files by chromosome
+    matrix_files = [
+        os.path.join(output_matrix_folder, file)
+        for file in os.listdir(output_matrix_folder)
+        if file.endswith("matrix.tsv") and os.path.getsize(os.path.join(output_matrix_folder, file)) > 20  # Skip empty files
+    ]
+    
+    if not matrix_files:
+        print("No non-empty matrix files to merge.")
+        return
+
+    # Group files by chromosome
+    file_groups = {}
+    for file in matrix_files:
+        chromosome = os.path.basename(file).split("all_cells_")[-1].split("_")[0]  # Adjust this split logic as needed
+        file_groups.setdefault(chromosome, []).append(file)
+
+    # Prepare arguments for multiprocessing
+    task_args = [(chromosome, files, output_folder) for chromosome, files in file_groups.items()]
+
+    # Use multiprocessing to run the merge for each chromosome
+    with Pool(processes=processes) as pool:
+        pool.map(merge_files_by_chromosome, task_args)
+
+    print("All columnar merges complete.")
+
+
+
+def merge_depth_files(output_folder, output_suffix=''):
+    """
+    Merges depth files into a single file.
+    """
+    print("Merging depths...")
+        
+    depth_files = f"{output_folder}/coverage/depths_{output_suffix}*.txt"
+    merged_depth_file = f"{output_folder}/depths_{output_suffix}.txt"
+    run_command(f"cat {depth_files} > {merged_depth_file}")
+    print(f"Depths merged into {merged_depth_file}.")
+
+
+
+def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matrix_folder):
+    """
+    Mimic samtools depth -a by including positions with zero coverage and applying equivalent filters.
+    """
+
+    depths_file = output_filepath
+    
+    print(f"Running samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}")
+    
+    regions = []
+    with open(bed_filepath, "r") as bed:
+        for line in bed:
+            fields = line.strip().split()
+            chrom, start, end = fields[0], int(fields[1]), int(fields[2])
+            regions.append((chrom, start, end))
+
+    if len(regions) > 0:
+        print(f"\t{len(regions)} regions")
+        
+        with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
+            try:
+                for chrom, start, end in regions:
+                    # Get coverage, applying base quality filter
+                    coverage = bam.count_coverage(
+                        chrom, start, end, quality_threshold=0  # Mimics -Q 13 in samtools depth
+                    )
+        
+                    # Calculate total coverage for each position and include zero-coverage positions
+                    for pos in range(start, end):
+                        total_coverage = sum(base[pos - start] for base in coverage)
+                        out.write(f"{chrom}\t{pos}\t{total_coverage}\n")
+            except Exception as e:
+                # Return the exception and the arguments for debugging
+                raise RuntimeError(
+                        f"Error processing bam {bam_filepath} using bed {bed_filepath} at {chrom}:{start}-{end}, "
+                        f"outputting to {depths_file}: {e}"
+                    )
+                    
+        if output_matrix_folder:
+            matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
+        
+            if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
+                # Pivot the depths output file into a matrix
+                pivot_depths_output(depths_file, matrix_output_file)
+
+
+def run_pysam_count_coverage(args_list, processes):
+    """
+    Runs pysam.count_coverage in parallel using multiprocessing.
+    """
+    try:
+        with Pool(processes=processes) as pool:
+            pool.starmap(calculate_coverage, args_list)
+
+    except Exception as e:
+        print(f"Aborting: One or more coverage calculations failed with an error: {e}", file=sys.stderr)
+        sys.exit(1)  # Exit with an error code
+
+
+def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', pivot=False, barcode_tag=None):
+    """
+    Prepare arguments for pysam coverage calculation for each BAM file and its BED file.
+    """
+    # Create a folder for matrix outputs if pivoting is enabled
+    if pivot:
+        output_matrix_folder = f"{output_folder}/matrix_outputs"
+        os.makedirs(output_matrix_folder, exist_ok=True)
+    else:
+        output_matrix_folder = None
+
+    args_list = []
+
+    # Format output suffix
+    if len(output_suffix) > 0:
+        output_suffix = f"_{output_suffix}"
+
+    print("prepare_pysam_coverage_args, barcode_tag is {}".format(barcode_tag))
+
+    for bam_filepath in bam_filepaths:
+        # Extract suffix from BAM filename
+        bam_filename = os.path.basename(bam_filepath)
+        bam_prefix, bam_suffix = bam_filename.split("_")[0], bam_filename.split("_")[1].split(".")[0]
+
+        if barcode_tag:
+            # Path to the corresponding split BED file
+            bed_filepath = f"{output_folder}/combined{output_suffix}_split_by_suffix/combined{output_suffix}_{bam_prefix}_{bam_suffix}.bed"
+            output_filepath = f"{output_folder}/coverage/depths{output_suffix}_{bam_prefix}_{bam_suffix}.txt"
+            
+        else:
+            # bulk case
+            bed_filepath = f"{output_folder}/combined{output_suffix}.bed"
+            output_filepath = f"{output_folder}/coverage/depths{output_suffix}_{bam_filename.split('_')[1]}.txt"
+            
+            
+        if os.path.exists(bed_filepath):
+            args_list.append((bam_filepath, bed_filepath, output_filepath, output_matrix_folder))
+        else:
+            print(f"Did not find {bed_filepath}")
+        
+        
+    return args_list
+
+
+
+def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
+                              output_suffix='', run=False, pivot=False, processes=4, barcode_tag=None):
+    """
+    Main function to generate and execute samtools depth commands, and optionally pivot and merge matrices.
+    """
+    samtools_depth_start_time = time.perf_counter()
+
+     # Prepare pysam coverage arguments
+    pysam_coverage_args = prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix=output_suffix, pivot=pivot, barcode_tag=barcode_tag)
+    
+    print(f"\tPrepared coverage arguments for {len(pysam_coverage_args)} BAM files.")
+
+    #all_depth_commands += samtools_depth_commands
+    #print(f"\tsamtools_depth_commands: {len(samtools_depth_commands)}")
+
+    with open('{}/depth_commands_{}.txt'.format(output_folder, output_suffix), 'w') as f:
+        for d in all_depth_commands:
+            f.write('{}\n\n'.format(d))
+            
+    if run:
+        print("Calculating depths using multiprocessing with pysam...")
+        run_pysam_count_coverage(pysam_coverage_args, processes)
+
+        merge_depth_files(output_folder, output_suffix)
+
+        if pivot:
+            output_matrix_folder = f"{output_folder}/matrix_outputs"
+            final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"
+            os.makedirs(final_combined_matrices_folder, exist_ok=True)
+        
+            print("\nRunning pivot...\n")
+            prepare_matrix_files_multiprocess(
+                output_matrix_folder, 
+                final_combined_matrices_folder,
+                processes=processes
+            )
+
+    samtools_depth_total_time = time.perf_counter() - samtools_depth_start_time
+
+    
+    if pivot:
+        print(f"Total seconds for samtools depth and matrix generation commands to run: {samtools_depth_total_time}")
+    else:
+        print(f"Total seconds for samtools depth commands to run: {samtools_depth_total_time}")
+
+
+
+def calculate_sailor_score(sailor_row):
+    edits = sailor_row['count']
+    num_reads = sailor_row['coverage']
+    original_base_counts = num_reads - edits
+    
+    cov_margin = 0.01
+    alpha, beta = 0, 0
+
+    num_failures = 0
+    failure_messages = []
+    try:
+        edit_frac = float(edits) / float(num_reads)
+    except Exception as e:
+        num_failures += 1
+        print("Bad Row: {}".format(sailor_row))
+        return None
+        
+    # calc smoothed counts and confidence
+    destination_base_smoothed = edits + alpha
+    origin_base_smoothed = original_base_counts + beta
+
+    ########  MOST IMPORTANT LINE  ########
+    # calculates the confidence of theta as
+    # P( theta < cov_margin | A, G) ~ Beta_theta(G, A)
+    confidence = 1 - betainc(destination_base_smoothed, origin_base_smoothed, cov_margin)
+    return confidence
+    
+
+def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_coverage=False):
+    final_site_level_information_df = final_site_level_information_df[final_site_level_information_df['strand_conversion'] == conversion]
+
+    if skip_coverage:
+        # Case where we want to skip coverage counting, we will just set it to -1 in the sailor-style output
+        coverage_col = "-1"
+        weird_sites = pd.DataFrame()
+    else:
+        # Normally, assume that there is a coverage column
+        coverage_col = final_site_level_information_df['coverage'].astype(str)
+
+        weird_sites = final_site_level_information_df[
+            (final_site_level_information_df.coverage == 0) |\
+            (final_site_level_information_df.coverage < final_site_level_information_df['count'])]
+    
+        print("{} rows had coverage of 0 or more edits than coverage... filtering these out, but look into them...".format(
+            len(weird_sites)))
+              
+        final_site_level_information_df = final_site_level_information_df[
+        (final_site_level_information_df.coverage > 0) & \
+        (final_site_level_information_df.coverage >= final_site_level_information_df['count'])
+        ]
+
+    
+    final_site_level_information_df['combo'] = final_site_level_information_df['count'].astype(str) + ',' + coverage_col
+
+    if skip_coverage:
+        final_site_level_information_df['score'] = -1
+    else:
+        final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
+
+    final_site_level_information_df['start'] = final_site_level_information_df['position']
+    final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
+    
+    final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
+    return final_site_level_information_df, weird_sites
+
+
+def concatenate_files(source_folder, file_pattern, output_filepath, run=False):
+    # Create the concatenation command with numeric sorting and header skipping
+    concat_command = (
+        f"for f in $(ls -v {source_folder}/{file_pattern}); do "
+        "tail -n +2 \"$f\"; "  # Skip the header row for each file
+        "done > {}".format(output_filepath)
+    )
+
+    # Write the command to a shell script
+    concat_bash = f"{source_folder}/concat_command.sh"
+    with open(concat_bash, 'w') as f:
+        f.write(concat_command)
+
+    if run:
+        print("Concatenating files in numerical order without headers...")
+        subprocess.run(['bash', concat_bash])
+        print("Done concatenating.")
+
+
+def get_edits_with_coverage_df(output_folder,
+                               barcode_tag=None):
+
+    all_edit_info_unique_position_with_coverage_df = pd.read_csv('{}/final_edit_info.tsv'.format(output_folder), sep='\t',
+                                                                     dtype={'coverage': int, 'position': int,
+                                                                                             'contig': str})
+    # If there was a barcode specified, then the contigs will have been set to a combination of contig and barcode ID.
+    # For example, we will find a contig to be 9_GATCCCTCAGTAACGG-1, and we will want to simplify it back to simply 9,
+    # as the barcode information is separately already present as it's own column in this dataframe. To ensure code continuity,
+    # this will still be true even with no barcode specified, in which case the contig will be <contig>_no_barcode
+    
+    # Therefore: replace the contig with the part before the barcode
+    all_edit_info_unique_position_with_coverage_df['contig'] = all_edit_info_unique_position_with_coverage_df.apply(lambda row: row['contig'].replace('_{}'.format(row['barcode']), ''), axis=1)
+
+    return all_edit_info_unique_position_with_coverage_df
+        
+
+
+def zero_edit_found(final_site_level_information_df, output_folder, sailor_list, bedgraphs_list, keep_intermediate_files, start_time, logging_folder):
+    print("No edits found.")
+    sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion']
+    sites_empty_df = pd.DataFrame(columns=sites_columns)
+    sites_empty_df.to_csv('{}/final_filtered_site_info.tsv'.format(output_folder), sep='\t', index=False)
+
+    Annotated_sites_columns = ['site_id','barcode','contig','position','ref','alt','strand','count','coverage','conversion','strand_conversion','feature_name','feature_type','feature_strand']
+    annotated_sites_empty_df = pd.DataFrame(columns=Annotated_sites_columns)
+    annotated_sites_empty_df.to_csv('{}/final_filtered_site_info_annotated.tsv'.format(output_folder), sep='\t', index=False)
+
+    empty_df = pd.DataFrame()
+    if len(sailor_list) > 0:
+        for conversion in sailor_list:
+            conversion_search = conversion[0] + '>' + conversion[1]
+            empty_df.to_csv('{}/sailor_style_sites_{}.bed'.format(
+                output_folder, 
+                conversion_search.replace(">", "-")), 
+                header=False, index=False, sep='\t')
+
+    if len(bedgraphs_list) > 0:
+        bedgraph_folder = '{}/bedgraphs'.format(output_folder)
+        make_folder(bedgraph_folder)
+        for conversion in bedgraphs_list:
+            conversion_search = conversion[0] + '>' + conversion[1]
+            empty_df.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
+            
+    current, peak = tracemalloc.get_traced_memory()
+    
+    with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
+        f.write(f'sites\t{len(final_site_level_information_df)}\n') 
+        f.write(f'peak_memory_mb\t{peak/1e6}\n') 
+        f.write(f'time_elapsed_seconds\t{time.time()-start_time:.2f}s\n') 
+
+    print(f"Current memory usage {current/1e6}MB; Peak: {peak/1e6}MB")
+    print(f'Time elapsed: {time.time()-start_time:.2f}s')
+
+    if not keep_intermediate_files:
+        pretty_print("Deleting intermediate files...", style="-")
+        delete_intermediate_files(output_folder)
+
+    pretty_print("Done!", style="+")
+    return 'Done'
+
+
+def delete_intermediate_files(output_folder):
+    to_delete = ['coverage', 'edit_info', 'split_bams', 'combined_all_cells_split_by_suffix',
+                 'combined_source_cells_split_by_suffix',
+                 'matrix_outputs',
+                 'all_edit_info.tsv', 
+                 'concat_command.sh', 'depth_command_source_cells.sh', 'combined.bed', 'merge_command.sh',
+                 'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
+                 'depths_source_cells.txt', 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv',
+                 'combined_all_cells.bed', 'depth_command_all_cells.sh', 'depths_all_cells.txt', 'combined_source_cells.bed'
+                ]
+    for object in to_delete:
+        object_path = '{}/{}'.format(output_folder, object)
+
+        if os.path.exists(object_path):
+            if os.path.isfile(object_path):
+                os.remove(object_path)
+            else:
+                shutil.rmtree(object_path)

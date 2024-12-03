@@ -17,4 +17,4 @@ $MARINE/tests/strandedness_tests/F1R2_pair_test \
 --strandedness 2 \
 --contigs "chr17" \
 --sailor \
---num_intervals_per_contig 16
+--keep_intermediate_files
