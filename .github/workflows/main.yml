@@ -28,6 +28,7 @@ jobs:
            
       - name: Create Conda Environment
         run: |
+          export MAMBA_ROOT_PREFIX=/usr/share/miniconda
           /usr/share/miniconda/bin/mamba create -n marine_environment python=3.8.18 -y
           /usr/share/miniconda/bin/mamba env update -n marine_environment --file marine_environment2.yaml
 
