@@ -40,46 +40,65 @@ Simply git clone this repository using the link at the top right on the main rep
 
 ### Command parameters
 ```
-usage: marine.py [-h] [--bam_filepath BAM_FILEPATH] [--annotation_bedfile_path ANNOTATION_BEDFILE_PATH] [--output_folder OUTPUT_FOLDER] [--barcode_whitelist_file BARCODE_WHITELIST_FILE]
-                 [--cores CORES] [--strandedness STRANDEDNESS] [--coverage] [--filtering] [--annotation] [--barcode_tag BARCODE_TAG] [--min_dist_from_end MIN_DIST_FROM_END]
-                 [--min_base_quality MIN_BASE_QUALITY] [--contigs CONTIGS] [--min_read_quality MIN_READ_QUALITY] [--sailor] [--verbose] [--paired_end] [--skip_coverage]
-                 [--max_edits_per_read MAX_EDITS_PER_READ] [--num_intervals_per_contig NUM_INTERVALS_PER_CONTIG]
+usage: marine.py [-h] [--bam_filepath BAM_FILEPATH] [--annotation_bedfile_path ANNOTATION_BEDFILE_PATH]
+                 [--output_folder OUTPUT_FOLDER] [--barcode_whitelist_file BARCODE_WHITELIST_FILE] [--cores CORES]
+                 [--strandedness {0,1,2}] [--barcode_tag BARCODE_TAG] [--min_dist_from_end MIN_DIST_FROM_END]
+                 [--min_base_quality MIN_BASE_QUALITY] [--contigs CONTIGS] [--min_read_quality MIN_READ_QUALITY]
+                 [--sailor [SAILOR]] [--bedgraphs [BEDGRAPHS]] [--verbose] [--keep_intermediate_files]
+                 [--num_per_sublist NUM_PER_SUBLIST] [--paired_end] [--all_cells_coverage]
+                 [--tabulation_bed TABULATION_BED] [--interval_length INTERVAL_LENGTH]
 
 Run MARINE
 
 optional arguments:
   -h, --help            show this help message and exit
   --bam_filepath BAM_FILEPATH
+                        Full path to MD-tagged and indexed .bam file
   --annotation_bedfile_path ANNOTATION_BEDFILE_PATH
+                        Full path to bed file with desired annotations in bed6 format (contig start end label1
+                        label2 strand)
   --output_folder OUTPUT_FOLDER
                         Directory in which all results will be generated, will be created if it does not exist
   --barcode_whitelist_file BARCODE_WHITELIST_FILE
                         List of cell barcodes to use for single-cell analysis
-  --cores CORES
-  --strandedness STRANDEDNESS
-                        If flag is used, then assume read 2 maps to the sense strand (and read 1 to antisense), otherwise assume read 1 maps to the sense strand
-  --coverage
-  --filtering
-  --annotation
+  --cores CORES         Number of CPUs to use for analysis. Will default to using all cores available if not
+                        specified
+  --strandedness {0,1,2}
+                        Possible values include: 0 (unstranded), 1 (stranded) and 2 (reversely stranded).
   --barcode_tag BARCODE_TAG
-                        CB for typical 10X experiment. For long-read and single-cell long read analyses, manually add an IS tag for isoform or an IB tag for barcode+isoform information.
-                        Leave blank for bulk seqencing
+                        CB for typical 10X experiment. For long-read and single-cell long read analyses, manually
+                        add an IS tag for isoform or an IB tag for barcode+isoform information. Do not provide any
+                        arguments when processing bulk seqencing
   --min_dist_from_end MIN_DIST_FROM_END
                         Minimum distance from the end of a read an edit has to be in order to be counted
   --min_base_quality MIN_BASE_QUALITY
-                        Minimum base quality, default is 15
-  --contigs CONTIGS
+                        Minimum base quality, default is 0
+  --contigs CONTIGS     Which contigs to process, in comma separated list (ie 1,2,3 or chr1,chr2,chr3, whichever
+                        matches your nomenclature)
   --min_read_quality MIN_READ_QUALITY
-                        Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this
-                        filter
-  --sailor
+                        Minimum read quality, default is 0... every aligner assigns mapq scores differently, so
+                        double-check the range of qualities in your sample before setting this filter
+  --sailor [SAILOR]     Generate SAILOR-style outputs.
+  --bedgraphs [BEDGRAPHS]
+                        Conversions for which to output a bedgraph for non-single cell runs, (e.g. CT,AI)
   --verbose
-  --paired_end          Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire
-                        pair, whether they show up on both ends or not.
-  --skip_coverage
-  --max_edits_per_read MAX_EDITS_PER_READ
-  --num_intervals_per_contig NUM_INTERVALS_PER_CONTIG
-                        Intervals to split analysis into... more intervals can yield faster perforamance especially with multiple cores
+  --keep_intermediate_files
+                        Keep intermediate files for debugging or to use --all_cells_coverage flag
+  --num_per_sublist NUM_PER_SUBLIST
+                        For single-cell datasets, specifies 'chunking', ie how many contigs to process at once. This
+                        can be lowered to enable lower-memory runs, with the tradeoff of longer runtime
+  --paired_end          Assess coverage taking without double-counting paired end overlapping regions... slower but
+                        more accurate. Edits by default are only counted once for an entire pair, whether they show
+                        up on both ends or not.
+  --all_cells_coverage  Requires --keep_intermediate_files flag to be set. Caution: this can take a long time if too
+                        many sites are used (think thousands of sites x thousands of cells... it gets big quickly),
+                        it is worth reducing the number of sites to tabulate through filtering beforehand, and using
+                        the additional argument --tabulation_bed to specify these sites.
+  --tabulation_bed TABULATION_BED
+                        Locations to run tabulation across all cells. The fist column should be contig, the second
+                        should match the position in the final_filtered_sites_info.tsv file.
+  --interval_length INTERVAL_LENGTH
+                        Length of intervals to split analysis into... you probably don't have to change this.
 ```
 
 # Example commands below are drawn from files in the "examples" folder
@@ -101,7 +120,6 @@ python marine.py \
 --output_folder examples/sc_subset_CT \
 --barcode_whitelist_file examples/data/sc_barcodes.tsv.gz \
 --barcode_tag "CB" \
---num_intervals_per_contig 16 \
 --strandedness 2
 ```
 
@@ -116,7 +134,6 @@ python marine.py \
 --output_folder examples/sc_lr_subset_CT \
 --barcode_whitelist_file examples/data/sc_lr_barcodes.tsv.gz \
 --barcode_tag "IB" \
---num_intervals_per_contig 16
 --strandedness 2
 ```
 
