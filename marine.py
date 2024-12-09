@@ -372,7 +372,7 @@ def process_combination_for_split(args):
     print(f"\t\t\t>>> Processed {chrom}, {prefix}_{suffix} -> {output_file}")
 
 
-def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, strand_conversion, processes=4, output_suffix="all_cells"):
+def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tabulation_bed=None, processes=4, output_suffix="all_cells"):
     """
     Generates combined BED files for all edit sites and splits them into suffix-specific files.
 
@@ -385,10 +385,18 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, str
     """
     input_file = f"{output_folder}/final_filtered_site_info.tsv"
     df = pd.read_csv(input_file, sep="\t")
-
-    # Filter by strand conversion
-    df = df[df['strand_conversion'] == strand_conversion]
-    print(f"Running all positions for {len(df)} {strand_conversion} edits")
+    print(f"\n{len(df)} positions in {input_file}...")
+    
+    # Filter by tabulation bed-specified positions
+    if tabulation_bed:
+        df['contig_position'] = df['contig'].astype(str) + '_' + df['position'].astype(str)
+        tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
+        tabulation_bed_df['contig_position'] = tabulation_bed_df['chrom'].astype(str) + '_' + tabulation_bed_df['start'].astype(str)
+        print(f"\t{len(tabulation_bed_df)} unique positions in {tabulation_bed}...")
+        print(tabulation_bed_df.head())
+        
+        df = df[df['contig_position'].isin(set(tabulation_bed_df.contig_position))]
+        print(f"\tRunning {len(df)} positions through all-cell coverage tabulation...")
 
     # Prepare combinations for multiprocessing
     split_bed_folder = f"{output_folder}/combined_{output_suffix}_split_by_suffix"
@@ -397,7 +405,7 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, str
     # Cleanup existing .bed files in the output folder
     existing_bed_files = glob(os.path.join(split_bed_folder, "*.bed"))
     if existing_bed_files:
-        print(f"Found {len(existing_bed_files)} existing .bed files. Removing...")
+        print(f"\t\tFound {len(existing_bed_files)} existing .bed files. Removing...")
         for file in existing_bed_files:
             os.remove(file)
     print("Existing .bed files removed. Starting fresh.")
@@ -416,7 +424,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         keep_intermediate_files=False,
         num_per_sublist=6,
         skip_coverage=False, interval_length=2000000,
-        all_cells_coverage=False
+        all_cells_coverage=False, tabulation_bed=None
        ):
         
     # Check to make sure the folder is empty, otherwise prompt for overwriting
@@ -631,9 +639,6 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
     if final_path_already_exists and all_cells_coverage:
         output_suffix = "all_cells"
         print("Calculating coverage at all edit sites in all cells...")
-
-        # Define the strand conversion type (e.g., 'A>G')
-        strand_conversion = "A>G"
     
         # Get the list of BAM file paths
         bam_filepaths = glob(f"{output_folder}/split_bams/*/*.bam")
@@ -641,7 +646,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         # Generate and split BED files using multiprocessing
         generate_and_split_bed_files_for_all_edits(output_folder,
                                                    bam_filepaths, 
-                                                   strand_conversion="A>G",
+                                                   tabulation_bed=tabulation_bed,
                                                    processes=cores, 
                                                    output_suffix=output_suffix)
 
@@ -697,7 +702,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--min_dist_from_end', type=int, default=0, help='Minimum distance from the end of a read an edit has to be in order to be counted'),
 
-    parser.add_argument('--min_base_quality', type=int, default=15, help='Minimum base quality, default is 15')
+    parser.add_argument('--min_base_quality', type=int, default=0, help='Minimum base quality, default is 15')
     parser.add_argument('--contigs', type=str, default='all')
     parser.add_argument('--min_read_quality', type=int, default=0, help='Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this filter')
     
@@ -710,6 +715,8 @@ if __name__ == '__main__':
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
     parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
     parser.add_argument('--all_cells_coverage', dest='all_cells_coverage', action='store_true')
+    parser.add_argument('--tabulation_bed', dest='tabulation_bed', type=str, default=None, help='Locations to run tabulation across all cells. The fist column should be contig, the second should match the position in the final_filtered_sites_info.tsv file.')
+
     parser.add_argument('--max_edits_per_read', type=int, default=None)
     parser.add_argument('--num_intervals_per_contig', type=int, default=200, help='Deprecated')
     parser.add_argument('--interval_length', type=int, default=2000000, help='Length of intervals split analysis into...')
@@ -734,6 +741,7 @@ if __name__ == '__main__':
     keep_intermediate_files = args.keep_intermediate_files
     paired_end = args.paired_end
     all_cells_coverage = args.all_cells_coverage
+    tabulation_bed = args.tabulation_bed
     skip_coverage = args.skip_coverage
 
     barcode_tag = args.barcode_tag
@@ -751,15 +759,16 @@ if __name__ == '__main__':
     if not barcode_tag:
         if all_cells_coverage == True:
             all_cells_coverage = False
-        
-    """
-    # Convert all_cells_coverage into list of conversions for which to output all cell info
-    if not all_cells_coverage is None:
-        all_cells_coverage_list = all_cells_coverage.upper().replace('I', 'G').split(',')
-        for c in all_cells_coverage_list:
-            assert(c in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG']) 
-    """
-    
+
+    if all_cells_coverage:
+        print("\n\nWill tabulate coverage across all cells... WARNING this can be extremely resource-consuming if there are a lot of cells and a lot of sites. Consider first filtering sites and then using the --tabulation_bed argument to specify the specific locations you would like tabulated across all cells.\n\n")
+        if tabulation_bed:
+            if os.path.exists(tabulation_bed):
+                print("\t...using sites in {}".format(tabulation_bed))
+            else:
+                print("{} does not exist! Exiting.".format(tabulation_bed))
+                sys.exit(1)
+                
     # Convert bedgraphs argument into list of conversions
     if not bedgraphs is None:
         if barcode_tag in ['CB', 'IB']:
@@ -835,7 +844,8 @@ if __name__ == '__main__':
                   "\tKeep intermediate files:\t{}".format(keep_intermediate_files),
                   "\tSkip coverage?:\t{}".format(skip_coverage),
                   "\tFor single-cell: \t{} contigs at at time\n".format(num_per_sublist),
-                  "\tCalculate coverage in all barcodes?: \t{}\n".format(all_cells_coverage)
+                  "\tCalculate coverage in all barcodes?: \t{}\n".format(all_cells_coverage),
+                  "\tTabulation bed for coverage calculation?: \t{}\n".format(tabulation_bed)
                  ])
 
     if not paired_end:
@@ -874,7 +884,8 @@ if __name__ == '__main__':
         keep_intermediate_files=keep_intermediate_files,
         num_per_sublist=num_per_sublist,
         interval_length=interval_length,
-        all_cells_coverage=all_cells_coverage
+        all_cells_coverage=all_cells_coverage,
+        tabulation_bed=tabulation_bed
        )
     
     
