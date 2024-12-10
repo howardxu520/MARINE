@@ -127,7 +127,7 @@ The examples should take no more than a few minutes to run, especially if multip
 Expected example outputs are contained in the subfolders in the examples folder.
 
 # Single cell example
-## Single-cell example MARINE command
+
 MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs. Strandedness for 10X inputs should be 2.
 
 Note: MARINE by default will filter out UMI duplicates based on the xf:i:25 tag at explained here: https://www.10xgenomics.com/analysis-guides/tutorial-navigating-10x-barcoded-bam-files
@@ -144,7 +144,7 @@ python marine.py \
 ```
 
 # Single cell long read example
-## Single-cell long read (PacBio) example MARINE command
+
 MARINE can be used to calculate edits and coverage on a per-cell and per-isoform basis after certain pre-processing steps are taken. Reads can be quantified and assigned to annotated isoforms using IsoQuant (v3.3.0) with parameters: --data-type pacbio, --transcript_quantification unique_only, and --gene_quantification unique_only. The read assignment output from IsoQuant can be used to add an isoform tag for each read, indicating the isoform to which it was assigned. Furthermore, the cell barcode can be concatenated to the isoform in a new tag called "IB", as shown in the IGV screenshot below (grouping labels refer to this tag in this case). Note that a suffix has been added to each IB tag reflecting the ending of both the isoform ID and the cell barcodes, which is used for efficiently calculating coverage only within each appropriate subset of isoform and cell-specific reads.
 
 ![Finding edits in single cells](images/long_read_sc_test_example.png)
@@ -164,7 +164,6 @@ This is derived from an APOBEC1-fusion experiment, so we expect an enrichment fo
 ![Single-cell CT expected edit distribution](images/sc_subset_CT_distribution.png)
 
 # Bulk example
-## Bulk example MARINE command
 
 ```
 python marine.py \
@@ -189,7 +188,6 @@ should expect to see to see an enrichment for A>G (I is interpreted as a G) edit
 ![Bulk AI expected edit distribution](images/bulk_subset_AI_distribution.png)
 
 # Bulk paired end example
-## Bulk (paired-end) example MARINE command -- example not provided 
 ```
 python marine.py \
 --bam_filepath examples/data/bulk_CT.md.subset.bam \
