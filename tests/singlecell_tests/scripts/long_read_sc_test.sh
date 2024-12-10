@@ -13,7 +13,7 @@ $MARINE/tests/singlecell_tests/long_read_sc_test \
 0 \
 --cores \
 16 \
---barcode_whitelist_file $MARINE/examples/data/sc_lr_barcodes.tsv.gz \
+--barcode_whitelist_file $MARINE/examples/data/sc_lr_barcodes.tsv \
 --strandedness 2 \
 --barcode_tag "IB" \
 --contigs "6" \
