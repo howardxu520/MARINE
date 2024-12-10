@@ -1,0 +1,26 @@
+command /tscc/projects/ps-yeolab3/ekofman/sailor2/marine.py --bam_filepath /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/data/bulk_AI.md.subset.bam --output_folder /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/bulk_subset_AI --strandedness 2 --cores 16 --annotation_bedfile_path /tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/hg38_gencode.v35.annotation.genes.bed --contigs 1 --bedgraphs AI --min_base_quality 15 --min_dist_from_end 5
+bam_filepath	/tscc/projects/ps-yeolab3/ekofman/sailor2/examples/data/bulk_AI.md.subset.bam
+annotation_bedfile_path	/tscc/projects/ps-yeolab3/ekofman/sailor2/annotations/hg38_gencode.v35.annotation.genes.bed
+output_folder	/tscc/projects/ps-yeolab3/ekofman/sailor2/examples/bulk_subset_AI
+strandedness	2
+barcode_tag	None
+barcode_whitelist_file	None
+contigs	['1']
+interval_length	32000000
+verbose	False
+cores	16
+number_of_expected_bams	4
+paired_end	False
+min_base_quality	15
+min_read_quality	0
+min_dist_from_end	5
+skip_coverage	False
+total_reads_processed	17824
+edited	2623
+no_edits	14843
+secondary	358
+total_edits	3073
+edits per read (EPR)	0.17240798922800718
+sites	2727
+peak_memory_mb	6.382552
+time_elapsed_seconds	181.66s

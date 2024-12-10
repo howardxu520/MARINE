@@ -140,6 +140,9 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     samfile = pysam.AlignmentFile(bampath, "rb")
     
     counts = defaultdict(lambda:defaultdict(lambda:0))
+    counts[contig]['total_edits'] = 0
+    counts[contig]['edited'] = 0
+    
     total_reads = 0
     
     bam_handles_for_barcodes = {}

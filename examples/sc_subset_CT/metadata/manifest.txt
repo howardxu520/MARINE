@@ -1,0 +1,25 @@
+command /tscc/projects/ps-yeolab3/ekofman/sailor2/marine.py --bam_filepath /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/data/single_cell_CT.md.subset.bam --output_folder /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/sc_subset_CT --barcode_whitelist_file /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/data/sc_barcodes.tsv.gz --barcode_tag CB --num_intervals_per_contig 16 --strandedness 2 --contigs 1,2,3,4,5,6 --min_base_quality 15 --all_cells_coverage
+bam_filepath	/tscc/projects/ps-yeolab3/ekofman/sailor2/examples/data/single_cell_CT.md.subset.bam
+annotation_bedfile_path	None
+output_folder	/tscc/projects/ps-yeolab3/ekofman/sailor2/examples/sc_subset_CT
+strandedness	2
+barcode_tag	CB
+barcode_whitelist_file	/tscc/projects/ps-yeolab3/ekofman/sailor2/examples/data/sc_barcodes.tsv.gz
+contigs	['1', '2', '3', '4', '5', '6']
+interval_length	32000000
+verbose	False
+cores	36
+number_of_expected_bams	4
+paired_end	False
+min_base_quality	15
+min_read_quality	0
+min_dist_from_end	0
+skip_coverage	False
+total_reads_processed	18535
+edited	2762.0
+no_edits	15773.0
+total_edits	2191.0
+edits per read (EPR)	0.11820879417318586
+sites	2191
+peak_memory_mb	70.106649
+time_elapsed_seconds	14.58s
