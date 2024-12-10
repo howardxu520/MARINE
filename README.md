@@ -140,8 +140,14 @@ python marine.py \
 --output_folder examples/sc_subset_CT \
 --barcode_whitelist_file examples/data/sc_barcodes.tsv.gz \
 --barcode_tag "CB" \
---strandedness 2
+--strandedness 2 \
+--all_cells_coverage # This flag will generate barcode x position coverage matrices.
 ```
+
+A recommended workflow for single-cell:
+* Run MARINE without the --all_cells_coverage flag set
+* Filter resulting edit sites down to a set you want to proceed with
+* Only run --all_cells_coverage in tandem with --tabulation_bed, which is where you can specify which sites should have coverage calculated across all cells. Otherwise this bit could take a very long time.
 
 # Single cell long read example
 
