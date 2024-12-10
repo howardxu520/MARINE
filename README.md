@@ -1,10 +1,30 @@
 ![MARINE logo](images/MARINE_logo.png)
 ------------------------------------------------------
-MARINE relies on the MD tag being present in your .bam file. Some tools like STAR provide the option to add the MD tag during alignment, but otherwise you may have to add it after alignment. To add the MD tag and then index the processed bam, use the following samtools command templates:
+# Table of Contents
+- [Introduction](#introduction)
+- [Installation](#installation)
+- [Command Parameters](#command-parameters)
+- [Examples](#examples)
+  - [Single-Cell Example](#single-cell-example)
+  - [Single-Cell Long Read Example](#single-cell-long-read-example)
+  - [Bulk Example](#bulk-example)
+  - [Bulk Paired-End Example](#bulk-paired-end-example)
+ 
+# Introduction 
+
+Note: MARINE relies on the MD tag being present in your .bam file. Some tools like STAR provide the option to add the MD tag during alignment, but otherwise you may have to add it after alignment. To add the MD tag and then index the processed bam, use the following samtools command templates:
 
 ```
 samtools calmd -bAr input.bam reference_genome.fa > input.md.bam
 samtools index input.md.bam
+```
+
+
+# Installation
+Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
+
+```
+git clone https://github.com/YeoLab/MARINE.git
 ```
 
 MARINE was developed and tested using Python 3.8.18 and is not guaranteed to work with earlier versions of Python.
@@ -34,13 +54,6 @@ Notes:
 1       65419   71585   OR4F5           protein_coding  +       
 1       89295   133723  AL627309.1      lincRNA  -       
 1       89551   91105   AL627309.3      lincRNA  -       
-```
-
-### Installation
-Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
-
-```
-git clone https://github.com/YeoLab/MARINE.git
 ```
 
 ### Command parameters
@@ -106,12 +119,14 @@ optional arguments:
                         Length of intervals to split analysis into... you probably don't have to change this.
 ```
 
+# Examples
 # Example commands below are drawn from files in the "examples" folder
 
 The examples should take no more than a few minutes to run, especially if multiple CPUs are avilable for use (and specified using the --cores arugment). MARINE was developed and tested in Linux running on x86_64 but should work without any special hardware. Please let us know if you encounter any problems by creating a GitHub issue in this repository.
 
 Expected example outputs are contained in the subfolders in the examples folder.
 
+# Single cell example
 ## Single-cell example MARINE command
 MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs. Strandedness for 10X inputs should be 2.
 
