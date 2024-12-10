@@ -143,6 +143,7 @@ python marine.py \
 --strandedness 2
 ```
 
+# Single cell long read example
 ## Single-cell long read (PacBio) example MARINE command
 MARINE can be used to calculate edits and coverage on a per-cell and per-isoform basis after certain pre-processing steps are taken. Reads can be quantified and assigned to annotated isoforms using IsoQuant (v3.3.0) with parameters: --data-type pacbio, --transcript_quantification unique_only, and --gene_quantification unique_only. The read assignment output from IsoQuant can be used to add an isoform tag for each read, indicating the isoform to which it was assigned. Furthermore, the cell barcode can be concatenated to the isoform in a new tag called "IB", as shown in the IGV screenshot below (grouping labels refer to this tag in this case). Note that a suffix has been added to each IB tag reflecting the ending of both the isoform ID and the cell barcodes, which is used for efficiently calculating coverage only within each appropriate subset of isoform and cell-specific reads.
 
@@ -162,6 +163,7 @@ This is derived from an APOBEC1-fusion experiment, so we expect an enrichment fo
 
 ![Single-cell CT expected edit distribution](images/sc_subset_CT_distribution.png)
 
+# Bulk example
 ## Bulk example MARINE command
 
 ```
@@ -186,7 +188,7 @@ should expect to see to see an enrichment for A>G (I is interpreted as a G) edit
 
 ![Bulk AI expected edit distribution](images/bulk_subset_AI_distribution.png)
 
-
+# Bulk paired end example
 ## Bulk (paired-end) example MARINE command -- example not provided 
 ```
 python marine.py \
