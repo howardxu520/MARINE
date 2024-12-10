@@ -682,44 +682,44 @@ def check_samtools():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run MARINE')
             
-    parser.add_argument('--bam_filepath', type=str, default=None)
-    parser.add_argument('--annotation_bedfile_path', type=str, default=None)
+    parser.add_argument('--bam_filepath', type=str, default=None, help="Full path to MD-tagged and indexed .bam file")
+    parser.add_argument('--annotation_bedfile_path', type=str, default=None, help="Full path to bed file with desired annotations in bed6 format (contig start end label1 label2 strand)")
 
     parser.add_argument('--output_folder', type=str, default=None, help="Directory in which all results will be generated, will be created if it does not exist")
     
     parser.add_argument('--barcode_whitelist_file', type=str, default=None, help="List of cell barcodes to use for single-cell analysis")
     
-    parser.add_argument('--cores', type=int, default=multiprocessing.cpu_count())
+    parser.add_argument('--cores', type=int, default=multiprocessing.cpu_count(), help="Number of CPUs to use for analysis. Will default to using all cores available if not specified")
     
     parser.add_argument('--strandedness', type=int, choices=[0, 1, 2],
-                        help='If flag is used, then assume read 2 maps to the sense strand (and read 1 to antisense), otherwise assume read 1 maps to the sense strand')
+                        help='Possible values include: 0 (unstranded), 1 (stranded) and 2 (reversely stranded).')
 
-    parser.add_argument('--coverage', dest='coverage_only', action='store_true')
-    parser.add_argument('--filtering', dest='filtering_only', action='store_true')
-    parser.add_argument('--annotation', dest='annotation_only', action='store_true')
+    parser.add_argument('--coverage', dest='coverage_only', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--filtering', dest='filtering_only', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--annotation', dest='annotation_only', action='store_true', help=argparse.SUPPRESS)
 
-    parser.add_argument('--barcode_tag', type=str, default=None, help='CB for typical 10X experiment. For long-read and single-cell long read analyses, manually add an IS tag for isoform or an IB tag for barcode+isoform information. Leave blank for bulk seqencing')
+    parser.add_argument('--barcode_tag', type=str, default=None, help='CB for typical 10X experiment. For long-read and single-cell long read analyses, manually add an IS tag for isoform or an IB tag for barcode+isoform information. Do not provide any arguments when processing bulk seqencing')
     
     parser.add_argument('--min_dist_from_end', type=int, default=0, help='Minimum distance from the end of a read an edit has to be in order to be counted'),
 
-    parser.add_argument('--min_base_quality', type=int, default=0, help='Minimum base quality, default is 15')
-    parser.add_argument('--contigs', type=str, default='all')
+    parser.add_argument('--min_base_quality', type=int, default=0, help='Minimum base quality, default is 0')
+    parser.add_argument('--contigs', type=str, default='all', help="Which contigs to process, in comma separated list (ie 1,2,3 or chr1,chr2,chr3, whichever matches your nomenclature)")
     parser.add_argument('--min_read_quality', type=int, default=0, help='Minimum read quality, default is 0... every aligner assigns mapq scores differently, so double-check the range of qualities in your sample before setting this filter')
     
-    parser.add_argument('--sailor', type=str, nargs='?', const='CT', default=None, dest='sailor')
+    parser.add_argument('--sailor', type=str, nargs='?', const='CT', default=None, dest='sailor', help="Generate SAILOR-style outputs.")
     
-    parser.add_argument('--bedgraphs', type=str, nargs='?', const='CT', default=None, help='Conversions for which to output a bedgraph for non-single cell runs, e.g. CT, AI')
+    parser.add_argument('--bedgraphs', type=str, nargs='?', const='CT', default=None, help='Conversions for which to output a bedgraph for non-single cell runs, (e.g. CT,AI)')
     parser.add_argument('--verbose', dest='verbose', action='store_true')
-    parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true')
-    parser.add_argument('--num_per_sublist', dest='num_per_sublist', type=int, default=6)
+    parser.add_argument('--keep_intermediate_files', dest='keep_intermediate_files', action='store_true', help="Keep intermediate files for debugging or to use --all_cells_coverage flag")
+    parser.add_argument('--num_per_sublist', dest='num_per_sublist', type=int, default=6, help="For single-cell datasets, specifies 'chunking', ie how many contigs to process at once. This can be lowered to enable lower-memory runs, with the tradeoff of longer runtime")
     parser.add_argument('--paired_end', dest='paired_end', action='store_true', help='Assess coverage taking without double-counting paired end overlapping regions... slower but more accurate. Edits by default are only counted once for an entire pair, whether they show up on both ends or not.')
-    parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true')
-    parser.add_argument('--all_cells_coverage', dest='all_cells_coverage', action='store_true')
+    parser.add_argument('--skip_coverage', dest='skip_coverage', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--all_cells_coverage', dest='all_cells_coverage', action='store_true', help='Requires --keep_intermediate_files flag to be set. Caution: this can take a long time if too many sites are used (think thousands of sites x thousands of cells... it gets big quickly), it is worth reducing the number of sites to tabulate through filtering beforehand, and using the additional argument --tabulation_bed to specify these sites.')
     parser.add_argument('--tabulation_bed', dest='tabulation_bed', type=str, default=None, help='Locations to run tabulation across all cells. The fist column should be contig, the second should match the position in the final_filtered_sites_info.tsv file.')
 
-    parser.add_argument('--max_edits_per_read', type=int, default=None)
-    parser.add_argument('--num_intervals_per_contig', type=int, default=200, help='Deprecated')
-    parser.add_argument('--interval_length', type=int, default=2000000, help='Length of intervals split analysis into...')
+    parser.add_argument('--max_edits_per_read', type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument('--num_intervals_per_contig', type=int, default=200, help=argparse.SUPPRESS) # deprecated
+    parser.add_argument('--interval_length', type=int, default=32000000, help='Length of intervals to split analysis into... you probably don\'t have to change this.')
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
