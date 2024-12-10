@@ -1,0 +1,2 @@
+echo 'concatenating bed file...';for file in /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/sc_subset_CT/edit_info/*edit_info.tsv; do awk 'NR > 1 {print $2, $4-1, $4}' OFS='	' "$file"; done | sort -k1,1 -k2,2n -u > /tscc/projects/ps-yeolab3/ekofman/sailor2/examples/sc_subset_CT/combined_source_cells.bed;
+
