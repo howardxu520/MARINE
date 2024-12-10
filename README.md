@@ -39,6 +39,10 @@ Notes:
 ### Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
 
+```
+git clone https://github.com/YeoLab/MARINE.git
+```
+
 ### Command parameters
 ```
 usage: marine.py [-h] [--bam_filepath BAM_FILEPATH] [--annotation_bedfile_path ANNOTATION_BEDFILE_PATH]
