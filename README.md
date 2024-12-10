@@ -18,13 +18,14 @@ conda activate marine_environment
 or if you encounter problems with this approach, try using mamba instead, which can be faster:
 
 ```
+conda install -c conda-forge mamba=1.5.11 -y 
 mamba create -n marine_environment python=3.8.18 -y
 mamba env update -n marine_environment --file marine_environment2.yaml
 conda activate marine_environment
 ```
 
 Notes:
-* The more cores used, the faster MARINE will run
+* The more cores used, the faster MARINE will run, up to a point
 * Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
 * The annotation bedfile should be tab-separated and should have a standard bed6 column ordering, as follows:
 ```
