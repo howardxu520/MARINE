@@ -21,6 +21,9 @@ Overview:
 Speed and memory profiles:
 ![MARINE specs](images/MARINE_specs.png)
 
+Comparison to existing tools for bulk RNA-seq data:
+![MARINE benchmarking](images/MARINE_benchmarks.jpg)
+
 # Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
 
