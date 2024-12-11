@@ -13,7 +13,13 @@
  
 # Introduction 
 
-RNA editing is a widespread mechanism that drives transcriptomic diversity and influences cellular differentiation and function. Despite its importance, existing tools are inefficient for comprehensive analysis of RNA editing in single-cell datasets. We introduce MARINE (Multi-Core Algorithm for Rapid Identification of Nucleotide Edits), a powerful and efficient tool for mapping the RNA editing landscape at single-cell resolution.
+RNA editing is a widespread phenomenon that drives transcriptomic diversity and influences cellular differentiation and function. Despite its importance, existing tools are inefficient for comprehensive analysis of RNA editing in single-cell datasets. We introduce MARINE (Multi-Core Algorithm for Rapid Identification of Nucleotide Edits), a powerful and efficient tool for mapping the RNA editing landscape at single-cell resolution.
+
+Overview:
+![MARINE overview](images/MARINE_workflow.png)
+
+Speed and memory profiles:
+![MARINE specs](images/MARINE_specs.png)
 
 # Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
