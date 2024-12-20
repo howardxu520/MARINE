@@ -3,6 +3,7 @@
 # Table of Contents
 - [Introduction](#introduction)
 - [Installation](#installation)
+- [Notes](#notes)
 - [Command Parameters](#command-parameters)
 - [Examples](#examples)
   - [Single-Cell Example](#single-cell-example)
@@ -12,13 +13,16 @@
  
 # Introduction 
 
-Note: MARINE relies on the MD tag being present in your .bam file. Some tools like STAR provide the option to add the MD tag during alignment, but otherwise you may have to add it after alignment. To add the MD tag and then index the processed bam, use the following samtools command templates:
+RNA editing is a widespread phenomenon that drives transcriptomic diversity and influences cellular differentiation and function. Despite its importance, existing tools are inefficient for comprehensive analysis of RNA editing in single-cell datasets. We introduce MARINE (Multi-Core Algorithm for Rapid Identification of Nucleotide Edits), a powerful and efficient tool for mapping the RNA editing landscape at single-cell resolution.
 
-```
-samtools calmd -bAr input.bam reference_genome.fa > input.md.bam
-samtools index input.md.bam
-```
+Overview:
+![MARINE overview](images/MARINE_workflow.png)
 
+Speed and memory profiles:
+![MARINE specs](images/MARINE_specs.png)
+
+Comparison to existing tools for bulk RNA-seq data:
+![MARINE benchmarking](images/MARINE_benchmarks.jpg)
 
 # Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
@@ -44,7 +48,13 @@ mamba env update -n marine_environment --file marine_environment2.yaml
 conda activate marine_environment
 ```
 
-Notes:
+# Notes:
+
+* MARINE relies on the MD tag being present in your .bam file. Some tools like STAR provide the option to add the MD tag during alignment, but otherwise you may have to add it after alignment. To add the MD tag and then index the processed bam, use the following samtools command templates:
+```
+samtools calmd -bAr input.bam reference_genome.fa > input.md.bam
+samtools index input.md.bam
+```
 * The more cores used, the faster MARINE will run, up to a point
 * Ensure that your annotation bedfile has the same chromosome nomenclature (e.g., "9" vs "chr9") as your bam
 * The annotation bedfile should be tab-separated and should have a standard bed6 column ordering, as follows:
