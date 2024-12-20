@@ -15,6 +15,7 @@ from multiprocessing import Pool
 import multiprocessing
 import time
 import anndata as ad
+import scanpy as sc
 from scipy.sparse import csr_matrix
 
 # Number of barcode characters to use as suffix during splitting 
