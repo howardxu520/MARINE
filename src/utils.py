@@ -287,7 +287,7 @@ def pivot_edits_to_sparse(df, output_folder):
         pivoted_df = pivoted_df.fillna(0)
 
         # Convert to a sparse matrix
-        sparse_matrix = sp.csr_matrix(pivoted_df.values)
+        sparse_matrix = csr_matrix(pivoted_df.values)
 
         # Create an AnnData object
         adata = ad.AnnData(
@@ -993,7 +993,7 @@ def merge_files_by_chromosome(args):
     df = pd.read_csv(merged_file, sep='\t', index_col=0)  # Assuming first column is positions
 
     # Convert DataFrame to sparse matrix
-    sparse_matrix = sp.csr_matrix(df.values)  # Use csr_matrix here
+    sparse_matrix = csr_matrix(df.values) 
 
     # Create AnnData object with sparse matrix
     adata = sc.AnnData(sparse_matrix)
