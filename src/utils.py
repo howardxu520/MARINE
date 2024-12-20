@@ -118,12 +118,12 @@ suffixes = {
 }
 
 
-def generate_bedgraphs(final_site_level_information_df, conversion_search, output_folder):
+def generate_bedgraphs(final_site_level_information_df, conversion_search, output_folder, conversions_list):
     bedgraph_folder = '{}/bedgraphs'.format(output_folder)
     make_folder(bedgraph_folder)
     
-    pretty_print("Making bedgraphs for {} conversions...\n".format(bedgraphs_list))
-    for conversion in bedgraphs_list:
+    pretty_print("Making bedgraphs for {} conversions...\n".format(conversions_list))
+    for conversion in conversions_list:
         conversion_search = conversion[0] + '>' + conversion[1]
         sites_for_conversion = final_site_level_information_df[final_site_level_information_df.conversion == conversion_search]
         sites_for_conversion['edit_fraction'] = sites_for_conversion['count']/sites_for_conversion['coverage']
