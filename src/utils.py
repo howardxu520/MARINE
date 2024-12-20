@@ -1157,11 +1157,6 @@ def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_fold
 
      # Prepare pysam coverage arguments
     pysam_coverage_args = prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix=output_suffix, pivot=pivot, barcode_tag=barcode_tag)
-    
-    print(f"\tPrepared coverage arguments for {len(pysam_coverage_args)} BAM files.")
-
-    #all_depth_commands += samtools_depth_commands
-    #print(f"\tsamtools_depth_commands: {len(samtools_depth_commands)}")
 
     with open('{}/depth_commands_{}.txt'.format(output_folder, output_suffix), 'w') as f:
         for d in all_depth_commands:

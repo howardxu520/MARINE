@@ -129,7 +129,7 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
         tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
         tabulation_bed_df['contig_position'] = tabulation_bed_df['chrom'].astype(str) + '_' + tabulation_bed_df['start'].astype(str)
         print(f"\t{len(tabulation_bed_df)} unique positions in {tabulation_bed}...")
-        print(tabulation_bed_df.head())
+        print("\n\tExample rows: {}\n".format(tabulation_bed_df.head()))
 
         valid_positions = set(df['contig_position'])
         positions_to_keep = valid_positions.intersection(set(tabulation_bed_df.contig_position))
@@ -141,6 +141,8 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
     print("Pivoting edits dataframe into sparse h5ad files...")
     pivot_edits_to_sparse(df, output_folder)
 
+    pretty_print('Splitting bedfile locations to enable efficient coverage calculation at all positions...',
+                 style='.')
     # Prepare combinations for multiprocessing
     split_bed_folder = f"{output_folder}/combined_{output_suffix}_split_by_suffix"
     os.makedirs(split_bed_folder, exist_ok=True)
@@ -148,7 +150,7 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
     # Cleanup existing .bed files in the output folder
     existing_bed_files = glob(os.path.join(split_bed_folder, "*.bed"))
     if existing_bed_files:
-        print(f"\t\tFound {len(existing_bed_files)} existing .bed files. Removing...")
+        print(f"Found {len(existing_bed_files)} existing .bed files. Removing...")
         for file in existing_bed_files:
             os.remove(file)
     print("Existing .bed files removed. Starting fresh.")
@@ -159,7 +161,7 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
     with Pool(processes=processes) as pool:
         pool.map(process_combination_for_split, combinations)
 
-    print(f"All split BED files generated in {output_folder}/combined_{output_suffix}_split_by_suffix")
+    print(f"\nAll split BED files generated in {output_folder}/combined_{output_suffix}_split_by_suffix\n")
         
     
 def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strandedness=True, barcode_tag="CB", paired_end=False, barcode_whitelist_file=None, verbose=False, coverage_only=False, filtering_only=False, annotation_only=False, bedgraphs_list=[], sailor_list=[], min_base_quality = 15, min_read_quality = 0, min_dist_from_end = 10, max_edits_per_read = None, cores = 64, number_of_expected_bams=4, 
@@ -326,7 +328,7 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
     if final_path_already_exists and all_cells_coverage:
         # Coverage across all cells
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        pretty_print("Calculating coverage across all cells at all positions...", style="~")
+        pretty_print("Generating sparse matrices for all positions across all cells...", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         output_suffix = "all_cells"
     
@@ -361,7 +363,6 @@ def check_samtools():
     try:
         # Run 'samtools --version' to check if samtools is available
         subprocess.run(["samtools", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print("Samtools is available.")
     except subprocess.CalledProcessError:
         print("Samtools is installed but encountered an issue running.")
         sys.exit(1)
