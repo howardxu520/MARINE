@@ -467,7 +467,7 @@ if __name__ == '__main__':
 
     # Get the exact command line used to run this script
     command_line = " ".join(shlex.quote(arg) for arg in sys.argv)
-    print('command: {}'.format(command_line))
+    print('\ncommand:\n\n{}\n'.format(command_line))
     # Define the path to your manifest file
     manifest_file = "manifest.txt"
     # Save the command to the manifest file
@@ -479,7 +479,7 @@ if __name__ == '__main__':
 
     if cores is None:
         cores = 16
-    pretty_print("Assuming {} cores available for multiprocessing. Set this to the number of available cores for optimal execution.".format(cores))
+    pretty_print("\nAssuming {} cores available for multiprocessing. Set this to the number of available cores for optimal execution.\n".format(cores))
    
     
     assert(not(coverage_only and filtering_only))

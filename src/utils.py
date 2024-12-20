@@ -22,6 +22,7 @@ CB_N = 1
 
 def print_marine_logo():
     logo_lines = [
+    "\n",
     "::::    ::::      :::     :::::::::  ::::::::::: ::::    ::: :::::::::: ",
     "+:+:+: :+:+:+   :+: :+:   :+:    :+:     :+:     :+:+:   :+: :+:        ",
     "+:+ +:+:+ +:+  +:+   +:+  +:+    +:+     +:+     :+:+:+  +:+ +:+        ",
@@ -374,9 +375,9 @@ def print_all_cells_coverage_warning(all_cells_coverage, tabulation_bed):
         print("\n\nWill tabulate coverage across all cells... WARNING this can be extremely resource-consuming if there are a lot of cells and a lot of sites. Consider first filtering sites and then using the --tabulation_bed argument to specify the specific locations you would like tabulated across all cells.\n\n")
         if tabulation_bed:
             if os.path.exists(tabulation_bed):
-                print("\t...using sites in {}".format(tabulation_bed))
+                print("\n\t...using sites in {}".format(tabulation_bed))
             else:
-                print("{} does not exist! Exiting.".format(tabulation_bed))
+                print("\n{} does not exist! Exiting.".format(tabulation_bed))
                 sys.exit(1)
 
 def convert_conversions_argument(conversions, barcode_tag, file_type=None):
@@ -409,6 +410,7 @@ def pretty_print(contents, style=''):
         
         if style != '':
             # Line before
+            print('\n')
             pretty_print(styled_line)
             
         sys.stdout.write(to_write)
