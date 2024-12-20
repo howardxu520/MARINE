@@ -25,7 +25,7 @@ make_depth_command_script_single_cell, concatenate_files, generate_and_run_bash_
 import os, psutil
 
 
-def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=None, cores=1):
+def generate_depths(output_folder, bam_filepaths, original_bam_filepath, paired_end=False, barcode_tag=None, cores=1):
     
     coverage_start_time = time.perf_counter()
 
@@ -67,7 +67,7 @@ def generate_depths(output_folder, bam_filepaths, paired_end=False, barcode_tag=
             paired_end_flag = ''
             
         # Bulk mode, we will not split the bed and simply use samtools depth on the combined.bed
-        samtools_depth_command = f"samtools depth {paired_end_flag}-a -b {output_folder}/combined_source_cells.bed {bam_filepath} > {output_folder}/depths_source_cells.txt"
+        samtools_depth_command = f"samtools depth {paired_end_flag}-a -b {output_folder}/combined_source_cells.bed {original_bam_filepath} > {output_folder}/depths_source_cells.txt"
         run_command(samtools_depth_command)
         
 

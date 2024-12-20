@@ -233,7 +233,12 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         
         # We want to run the samtools depth command for each of the reconfigured bam files
         print("Running samtools depth on {} subset bam paths...".format(len(reconfigured_bam_filepaths)))
-        total_time, total_seconds_for_contig_df = generate_depths(output_folder, reconfigured_bam_filepaths, paired_end=paired_end, barcode_tag=barcode_tag, cores=cores)
+        total_time, total_seconds_for_contig_df = generate_depths(output_folder, 
+                                                                  reconfigured_bam_filepaths,
+                                                                  bam_filepath, # original bam_filepath for bulk case
+                                                                  paired_end=paired_end, 
+                                                                  barcode_tag=barcode_tag, 
+                                                                  cores=cores)
                                               
         total_seconds_for_contig_df.to_csv("{}/coverage_calculation_timing.tsv".format(logging_folder), sep='\t')
          
