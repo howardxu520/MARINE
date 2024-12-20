@@ -14,8 +14,8 @@ import shutil
 from multiprocessing import Pool
 import multiprocessing
 import time
-import scipy.sparse as sp
 import anndata as ad
+from scipy.sparse import csr_matrix
 
 # Number of barcode characters to use as suffix during splitting 
 CB_N = 1
@@ -976,6 +976,7 @@ def merge_files_by_chromosome(args):
     first_file = files[0]
     other_files = files[1:]
     merged_file = os.path.join(output_folder, f"{chromosome}_comprehensive_coverage_matrix.tsv")
+    h5ad_file = os.path.join(output_folder, f"{chromosome}_comprehensive_coverage_matrix.h5ad")
 
     # Prepare the paste command
     strip_headers_command = " ".join(
@@ -986,6 +987,23 @@ def merge_files_by_chromosome(args):
     # Use bash to execute the paste command
     run_command(f"bash -c '{paste_command}'")
     print(f"\tColumnar merge complete for {chromosome}. Output saved to {merged_file}.")
+
+    # Convert the merged file to an h5ad format with a sparse matrix
+    print(f"\tConverting {merged_file} to {h5ad_file} as a sparse matrix.")
+    df = pd.read_csv(merged_file, sep='\t', index_col=0)  # Assuming first column is positions
+
+    # Convert DataFrame to sparse matrix
+    sparse_matrix = sp.csr_matrix(df.values)  # Use csr_matrix here
+
+    # Create AnnData object with sparse matrix
+    adata = sc.AnnData(sparse_matrix)
+    adata.obs_names = df.index  # Set row (position) names
+    adata.var_names = df.columns  # Set column (barcode) names
+
+    # Write to .h5ad file
+    adata.write_h5ad(h5ad_file)
+    print(f"\th5ad conversion complete. Output saved to {h5ad_file}.")
+
 
 
 def prepare_matrix_files_multiprocess(output_matrix_folder, 

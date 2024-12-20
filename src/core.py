@@ -20,7 +20,7 @@ print_read_info, get_read_information, get_hamming_distance, remove_softclipped_
 from utils import get_contig_lengths_dict, get_intervals, index_bam, write_rows_to_info_file, write_header_to_edit_info, \
 write_read_to_bam_file, remove_file_if_exists, make_folder, concat_and_write_bams_wrapper, make_edit_finding_jobs, pretty_print, get_contigs_that_need_bams_written, split_bed_file, \
 get_coverage_wrapper, write_reads_to_file, sort_bam, rm_bam, suffixes, get_broken_up_contigs, run_command, \
-make_depth_command_script_single_cell, concatenate_files, generate_and_run_bash_merge
+make_depth_command_script_single_cell, concatenate_files, generate_and_run_bash_merge, read_barcode_whitelist_file
 
 import os, psutil
 
