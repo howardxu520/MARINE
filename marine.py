@@ -19,6 +19,10 @@ import tracemalloc
 from matplotlib import pyplot as plt
 import math
 import shlex
+import scipy.sparse as sp
+import anndata as ad
+import os
+
 
 # checkpoint 
 
@@ -372,6 +376,46 @@ def process_combination_for_split(args):
     print(f"\t\t\t>>> Processed {chrom}, {prefix}_{suffix} -> {output_file}")
 
 
+def pivot_edits_to_sparse(df, output_folder):
+    # Create a new column for contig:position
+    df["CombinedPosition"] = df["contig"].astype(str) + ":" + df["position"].astype(str)
+
+    # Ensure the output directory exists
+    final_output_dir = os.path.join(output_folder, "final_matrix_outputs")
+    os.makedirs(final_output_dir, exist_ok=True)
+
+    for strand_conversion in df.strand_conversion.unique():
+        print(f"Processing strand_conversion: {strand_conversion}")
+
+        # Pivot the dataframe
+        pivoted_df = df[df.strand_conversion == strand_conversion].pivot(
+            index="CombinedPosition", 
+            columns="barcode", 
+            values="count"
+        )
+
+        # Replace NaN with 0 for missing values
+        pivoted_df = pivoted_df.fillna(0)
+
+        # Convert to a sparse matrix
+        sparse_matrix = sp.csr_matrix(pivoted_df.values)
+
+        # Create an AnnData object
+        adata = ad.AnnData(
+            X=sparse_matrix,
+            obs=pd.DataFrame(index=pivoted_df.index),  # Row (site) metadata
+            var=pd.DataFrame(index=pivoted_df.columns)  # Column (barcode) metadata
+        )
+
+        # Save the AnnData object
+        output_file = os.path.join(
+            final_output_dir,
+            f"comprehensive_{strand_conversion.replace('>', '_')}_edits_matrix.h5ad"
+        )
+        adata.write(output_file)
+        print(f"Saved sparse matrix for {strand_conversion} to {output_file}")
+
+        
 def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tabulation_bed=None, processes=4, output_suffix="all_cells"):
     """
     Generates combined BED files for all edit sites and splits them into suffix-specific files.
@@ -397,6 +441,10 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
         
         df = df[df['contig_position'].isin(set(tabulation_bed_df.contig_position))]
         print(f"\tRunning {len(df)} positions through all-cell coverage tabulation...")
+
+    # Pivot edit dataframe
+    print("Pivoting edits dataframe into sparse h5ad files...")
+    pivot_edits_to_sparse(df, output_folder)
 
     # Prepare combinations for multiprocessing
     split_bed_folder = f"{output_folder}/combined_{output_suffix}_split_by_suffix"
