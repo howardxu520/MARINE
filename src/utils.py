@@ -14,8 +14,28 @@ import shutil
 from multiprocessing import Pool
 import multiprocessing
 import time
+import scipy.sparse as sp
+import anndata as ad
 
+# Number of barcode characters to use as suffix during splitting 
 CB_N = 1
+
+def print_marine_logo():
+    logo_lines = [
+    "::::    ::::      :::     :::::::::  ::::::::::: ::::    ::: :::::::::: ",
+    "+:+:+: :+:+:+   :+: :+:   :+:    :+:     :+:     :+:+:   :+: :+:        ",
+    "+:+ +:+:+ +:+  +:+   +:+  +:+    +:+     +:+     :+:+:+  +:+ +:+        ",
+    "+#+  +:+  +#+ +#++:++#++: +#++:++#:      +#+     +#+ +:+ +#+ +#++:++#   ",
+    "+#+       +#+ +#+     +#+ +#+    +#+     +#+     +#+  +#+#+# +#+        ",
+    "#+#       #+# #+#     #+# #+#    #+#     #+#     #+#   #+#+# #+#        ",
+    "###       ### ###     ### ###    ### ########### ###    #### ########## "
+    ]
+    for l in logo_lines:
+        pretty_print(l)
+        
+    pretty_print("Multi-core Algorithm for Rapid Identification of Nucleotide Edits", style="=")
+
+
 
 def generate_permutations_list_for_CB(n):
     """
@@ -95,6 +115,94 @@ suffixes = {
     ]
 }
 
+
+def generate_bedgraphs(final_site_level_information_df, conversion_search, output_folder):
+    bedgraph_folder = '{}/bedgraphs'.format(output_folder)
+    make_folder(bedgraph_folder)
+    
+    pretty_print("Making bedgraphs for {} conversions...\n".format(bedgraphs_list))
+    for conversion in bedgraphs_list:
+        conversion_search = conversion[0] + '>' + conversion[1]
+        sites_for_conversion = final_site_level_information_df[final_site_level_information_df.conversion == conversion_search]
+        sites_for_conversion['edit_fraction'] = sites_for_conversion['count']/sites_for_conversion['coverage']
+        sites_for_conversion['start'] = sites_for_conversion['position'] - 1
+        sites_for_conversion_bedgraph_cols = sites_for_conversion[['contig', 'start', 'position', 'edit_fraction']]
+    
+        sites_for_conversion_bedgraph_cols.to_csv('{}/{}_{}.bedgraph'.format(bedgraph_folder, output_folder.split('/')[-1], conversion), sep='\t', index=False, header=False)
+
+
+
+def convert_sites_to_sailor(final_site_level_information_df, sailor_list, output_folder, skip_coverage):
+    # Output SAILOR-formatted file for use in FLARE downstream
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 1       629275  629276  0.966040688     2,30    +
+    # 1       629309  629310  2.8306e-05      1,1043  +
+    
+    for conversion in sailor_list:
+        conversion_search = conversion[0] + '>' + conversion[1]
+        
+        print("Generating SAILOR-style bed outputs for conversion {}...".format(conversion))
+        
+        sailor_sites,weird_sites = get_sailor_sites(final_site_level_information_df, conversion_search, skip_coverage=skip_coverage)
+        sailor_sites = sailor_sites.drop_duplicates()
+    
+        print("{} final deduplicated {} SAILOR-formatted sites".format(len(sailor_sites), conversion_search))
+        sailor_sites.to_csv('{}/sailor_style_sites_{}.bed'.format(
+            output_folder, 
+            conversion_search.replace(">", "-")), 
+            header=False,
+            index=False,       
+            sep='\t')
+
+
+
+def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix=''):
+    """
+    Split a BED file into multiple files based on suffixes in the first column.
+    Each line is assigned to the appropriate file based on the suffix.
+
+    e.g.:
+    
+    10_AAACGAAAGTCACACT-1   6143263         6143264
+    10_AAACGAAAGTCACACT-1   11912575        11912576
+    10_AAACGAAAGTCACACT-1   12209751        12209752
+    10_AAACGAAAGTCACACT-1   13320235        13320236
+    10_AAACGAAAGTCACACT-1   27036085        27036086
+
+    """
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    single_cell_approach = len(bam_filepaths) > 0
+    
+    suffix_pairs = [
+        (os.path.basename(bam).split("_")[0], 
+         os.path.basename(bam).split("_")[1].split(".")[0]) for bam in bam_filepaths
+    ]
+        
+    # Open file handles for each suffix
+    file_handles = {}
+    for prefix, suffix in suffix_pairs:
+        output_file = os.path.join(output_folder, f"combined_{output_suffix}_{prefix}_{suffix}.bed")
+        file_handles[prefix + suffix] = open(output_file, 'w')
+
+    try:
+        with open(input_bed_file, 'r') as infile:
+            for line in infile:
+                # Parse the first column to determine the suffix
+                columns = line.split()
+                
+                chrom = columns[0]  # Assuming the first column is the chromosome
+                for prefix, suffix in suffix_pairs:
+                    if chrom.startswith(f"{prefix}_") and chrom.endswith(suffix):
+                        file_handles[prefix + suffix].write(line)
+                        break
+
+    finally:
+        # Close all file handles
+        for handle in file_handles.values():
+            handle.close()
+            
 def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4):
     bam_indices_written = [f.split('/')[-1].split('.bam')[0] for f in glob('{}/*/*.sorted.bam.bai'.format(split_bams_folder))]
 
@@ -116,6 +224,68 @@ def get_contigs_that_need_bams_written(expected_contigs, split_bams_folder, barc
             contigs_to_write_bams_for.append(c)
     
     return contigs_to_write_bams_for
+
+
+def get_broken_up_contigs(contigs, num_per_sublist):
+    broken_up_contigs = []
+                
+    i_options = range((math.ceil(len(contigs)/num_per_sublist)) + 1)
+    
+    for i in i_options:
+        contig_sublist = []
+        j_options = range(i*num_per_sublist, (i*num_per_sublist) + num_per_sublist)
+        
+        for j in j_options:
+            if j < len(contigs):
+                contig_sublist.append(contigs[j])
+
+        if len(contig_sublist) > 0:
+            broken_up_contigs.append(contig_sublist)
+    return broken_up_contigs
+
+
+def pivot_edits_to_sparse(df, output_folder):
+    
+    # Create a new column for contig:position
+    df["CombinedPosition"] = df["contig"].astype(str) + ":" + df["position"].astype(str)
+
+    # Ensure the output directory exists
+    final_output_dir = os.path.join(output_folder, "final_matrix_outputs")
+    os.makedirs(final_output_dir, exist_ok=True)
+
+    print(f"Saving edit sparse matrices to {final_output_dir}")
+    
+    for strand_conversion in df.strand_conversion.unique():
+        print(f"\tProcessing strand_conversion: {strand_conversion}")
+
+        # Pivot the dataframe
+        pivoted_df = df[df.strand_conversion == strand_conversion].pivot(
+            index="CombinedPosition", 
+            columns="barcode", 
+            values="count"
+        )
+
+        # Replace NaN with 0 for missing values
+        pivoted_df = pivoted_df.fillna(0)
+
+        # Convert to a sparse matrix
+        sparse_matrix = sp.csr_matrix(pivoted_df.values)
+
+        # Create an AnnData object
+        adata = ad.AnnData(
+            X=sparse_matrix,
+            obs=pd.DataFrame(index=pivoted_df.index),  # Row (site) metadata
+            var=pd.DataFrame(index=pivoted_df.columns)  # Column (barcode) metadata
+        )
+
+        # Save the AnnData object
+        output_file_name = f"comprehensive_{strand_conversion.replace('>', '_')}_edits_matrix.h5ad"
+        output_file = os.path.join(
+            final_output_dir,
+            output_file_name
+        )
+        adata.write(output_file)
+        print(f"\t\tSaved sparse matrix for {strand_conversion} to {output_file_name}")
 
 
 def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
@@ -182,7 +352,30 @@ def read_barcode_whitelist_file(barcode_whitelist_file):
     pretty_print("Barcodes in whitelist: {}".format(len(barcode_whitelist)))
     return barcode_whitelist
 
+def print_all_cells_coverage_warning(all_cells_coverage, tabulation_bed):
+    if all_cells_coverage:
+        print("\n\nWill tabulate coverage across all cells... WARNING this can be extremely resource-consuming if there are a lot of cells and a lot of sites. Consider first filtering sites and then using the --tabulation_bed argument to specify the specific locations you would like tabulated across all cells.\n\n")
+        if tabulation_bed:
+            if os.path.exists(tabulation_bed):
+                print("\t...using sites in {}".format(tabulation_bed))
+            else:
+                print("{} does not exist! Exiting.".format(tabulation_bed))
+                sys.exit(1)
 
+def convert_conversions_argument(conversions, barcode_tag, file_type=None):
+    # Convert bedgraphs argument into list of conversions
+    if not conversions is None:
+        if barcode_tag in ['CB', 'IB']:
+            sys.stderr.write(f"Can only output {file_type} for bulk sequencing runs of MARINE")
+            sys.exit(1)
+            
+        conversions_list = conversions.upper().replace('I', 'G').split(',')
+        for b in conversions_list:
+            assert(b in ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG'])
+    else:
+        conversions_list = []
+    return conversions_list 
+    
 def pretty_print(contents, style=''):
     if type(contents) == list:
         for item in contents:
@@ -195,7 +388,7 @@ def pretty_print(contents, style=''):
         before_line = None
         after_line = None
         
-        styled_line = ''.join([style for i in range(len(to_write))])
+        styled_line = ''.join([style for i in range(min(100, len(to_write)))])
         
         if style != '':
             # Line before
@@ -754,7 +947,7 @@ def merge_files_by_chromosome(args):
 
     # Use bash to execute the paste command
     run_command(f"bash -c '{paste_command}'")
-    print(f"Columnar merge complete for {chromosome}. Output saved to {merged_file}.")
+    print(f"\tColumnar merge complete for {chromosome}. Output saved to {merged_file}.")
 
 
 def prepare_matrix_files_multiprocess(output_matrix_folder, 
@@ -763,7 +956,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
     """
     Merges matrix files column-wise, grouping by chromosome, using multiprocessing.
     """
-    print("Merging matrices column-wise by chromosome...")
+    print("\n\nMerging matrices column-wise by chromosome...")
 
     # Group files by chromosome
     matrix_files = [
@@ -789,7 +982,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
     with Pool(processes=processes) as pool:
         pool.map(merge_files_by_chromosome, task_args)
 
-    print("All columnar merges complete.")
+    print("All columnar merges complete.\n")
 
 
 
@@ -813,7 +1006,7 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
 
     depths_file = output_filepath
     
-    print(f"Running samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}")
+    print(f"\tRunning samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}\n")
     
     regions = []
     with open(bed_filepath, "r") as bed:
@@ -823,7 +1016,7 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
             regions.append((chrom, start, end))
 
     if len(regions) > 0:
-        print(f"\t{len(regions)} regions")
+        print(f"\t{bed_filepath.split('/')[-1]}: {len(regions)} regions")
         
         with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
             try:
@@ -882,8 +1075,6 @@ def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', 
     if len(output_suffix) > 0:
         output_suffix = f"_{output_suffix}"
 
-    print("prepare_pysam_coverage_args, barcode_tag is {}".format(barcode_tag))
-
     for bam_filepath in bam_filepaths:
         # Extract suffix from BAM filename
         bam_filename = os.path.basename(bam_filepath)
@@ -909,7 +1100,17 @@ def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', 
     return args_list
 
 
-
+def check_folder_is_empty_warn_if_not(output_folder):
+    # Check to make sure the folder is empty, otherwise prompt for overwriting
+    if any(os.scandir(output_folder)):
+        file_info = []
+        for i in os.scandir(output_folder):
+            file_info.append('\tFile: {}'.format(i))
+            
+        pretty_print("WARNING: {} is not empty\n{}".format(output_folder,
+                                                           '\n'.join(file_info)
+                                                          ), style="^")
+        
 def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
                               output_suffix='', run=False, pivot=False, processes=4, barcode_tag=None):
     """
@@ -930,7 +1131,7 @@ def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_fold
             f.write('{}\n\n'.format(d))
             
     if run:
-        print("Calculating depths using multiprocessing with pysam...")
+        pretty_print("\nCalculating depths using multiprocessing with pysam...", style='.')
         run_pysam_count_coverage(pysam_coverage_args, processes)
 
         merge_depth_files(output_folder, output_suffix)
