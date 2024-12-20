@@ -39,15 +39,16 @@ def print_marine_logo():
 
 def generate_permutations_list_for_CB(n):
     """
-    Generate all permutations of A, C, G, T for strings of length n
-    and format the output as a list with "-1" appended to each permutation.
+    Generate all permutations of A, C, G, T for strings of length n and append "-1" to each permutation.
 
-    Output for 2, for example: ['AA-1', 'AC-1', 'AG-1', 'AT-1', 'CA-1', 'CC-1', 'CG-1', 'CT-1', 'GA-1', 'GC-1'...]
     Args:
-        n (int): Length of the strings to generate.
-        
+        n (int): Length of the nucleotide sequence to generate permutations for.
+
     Returns:
-        list: A list of strings where each string is a permutation with "-1" appended.
+        list: A list of nucleotide permutations in the format "PERMUTATION-1".
+    
+    Example:
+        For n=2, the output will be ['AA-1', 'AC-1', 'AG-1', 'AT-1', ...].
     """
     # Generate all combinations of A, C, G, T of length n
     combinations = [''.join(p) for p in product('ACGT', repeat=n)]
@@ -245,6 +246,22 @@ def get_broken_up_contigs(contigs, num_per_sublist):
 
 
 def pivot_edits_to_sparse(df, output_folder):
+    """
+    Convert a dense dataframe of edit information into a sparse matrix and save it as an AnnData object.
+
+    Args:
+        df (pd.DataFrame): Dataframe containing edit information with columns 'contig', 'position', 'barcode', and 'count'.
+        output_folder (str): Path to the output folder for saving results.
+
+    Process:
+        - Combine 'contig' and 'position' into a single column.
+        - Filter data by strand conversion type.
+        - Pivot data to create a matrix with rows as genomic positions and columns as barcodes.
+        - Convert the matrix to a sparse format and save as .h5ad.
+
+    Saves:
+        - Sparse matrix files in AnnData format (.h5ad) in the 'final_matrix_outputs' directory.
+    """
     
     # Create a new column for contig:position
     df["CombinedPosition"] = df["contig"].astype(str) + ":" + df["position"].astype(str)
@@ -846,6 +863,25 @@ def concat_and_write_bams_wrapper(params):
 
 
 def generate_and_run_bash_merge(output_folder, file1_path, file2_path, output_file_path, header_columns, barcode_tag=None):
+    """
+    Generate and execute a bash script to merge two files using a join operation and output a final TSV.
+
+    Args:
+        output_folder (str): Path to the folder for saving intermediate files and scripts.
+        file1_path (str): Path to the first input file.
+        file2_path (str): Path to the second input file.
+        output_file_path (str): Path to save the final merged output.
+        header_columns (list): List of column names for the output file.
+        barcode_tag (str, optional): Tag indicating whether barcodes are used. Defaults to None.
+
+    Steps:
+        1. Adjust positions in `file2` for correct merging.
+        2. Sort `file1` and prepare both files for joining.
+        3. Perform a join operation based on common keys.
+        4. Add a header to the final output file.
+        5. Save and execute the script for merging.
+    """
+    
     # Convert header list into a tab-separated string
     header = "\t".join(header_columns)
 
@@ -1102,14 +1138,15 @@ def prepare_pysam_coverage_args(bam_filepaths, output_folder, output_suffix='', 
 
 def check_folder_is_empty_warn_if_not(output_folder):
     # Check to make sure the folder is empty, otherwise prompt for overwriting
-    if any(os.scandir(output_folder)):
-        file_info = []
-        for i in os.scandir(output_folder):
-            file_info.append('\tFile: {}'.format(i))
-            
-        pretty_print("WARNING: {} is not empty\n{}".format(output_folder,
-                                                           '\n'.join(file_info)
-                                                          ), style="^")
+    if os.path.exists(output_folder):
+        if any(os.scandir(output_folder)):
+            file_info = []
+            for i in os.scandir(output_folder):
+                file_info.append('\tFile: {}'.format(i))
+                
+            pretty_print("WARNING: {} is not empty\n{}".format(output_folder,
+                                                               '\n'.join(file_info)
+                                                              ), style="^")
         
 def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_folder, all_depth_commands=[], 
                               output_suffix='', run=False, pivot=False, processes=4, barcode_tag=None):
