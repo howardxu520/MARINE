@@ -119,7 +119,7 @@ suffixes = {
 }
 
 
-def generate_bedgraphs(final_site_level_information_df, conversion_search, output_folder, conversions_list):
+def generate_bedgraphs(final_site_level_information_df, conversions_list, output_folder):
     bedgraph_folder = '{}/bedgraphs'.format(output_folder)
     make_folder(bedgraph_folder)
     
