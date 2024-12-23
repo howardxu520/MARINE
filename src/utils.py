@@ -17,6 +17,7 @@ import time
 import anndata as ad
 import scanpy as sc
 from scipy.sparse import csr_matrix
+import scipy.sparse as sp
 
 # Number of barcode characters to use as suffix during splitting 
 CB_N = 1
@@ -288,13 +289,13 @@ def pivot_edits_to_sparse(df, output_folder):
         pivoted_df = pivoted_df.fillna(0)
 
         # Convert to a sparse matrix
-        sparse_matrix = csr_matrix(pivoted_df.values)
+        sparse_matrix = csr_matrix(pivoted_df.values.T)
 
         # Create an AnnData object
         adata = ad.AnnData(
             X=sparse_matrix,
-            obs=pd.DataFrame(index=pivoted_df.index),  # Row (site) metadata
-            var=pd.DataFrame(index=pivoted_df.columns)  # Column (barcode) metadata
+            obs=pd.DataFrame(index=pivoted_df.columns),  # Row (site) metadata
+            var=pd.DataFrame(index=pivoted_df.index)  # Column (barcode) metadata
         )
 
         # Save the AnnData object
@@ -993,18 +994,59 @@ def merge_files_by_chromosome(args):
     print(f"\tConverting {merged_file} to {h5ad_file} as a sparse matrix.")
     df = pd.read_csv(merged_file, sep='\t', index_col=0)  # Assuming first column is positions
 
+    # Subtract 1 from position in index to match edit position indexing
+    new_indices = []
+    for i in df.index:
+        contig, position = i.split(':')
+        position = int(position)+1
+        new_index = '{}:{}'.format(contig, position)
+        new_indices.append(new_index)
+    df.index = new_indices
+    
     # Convert DataFrame to sparse matrix
-    sparse_matrix = csr_matrix(df.values) 
+    sparse_matrix = csr_matrix(df.values.T) 
 
     # Create AnnData object with sparse matrix
     adata = sc.AnnData(sparse_matrix)
-    adata.obs_names = df.index  # Set row (position) names
-    adata.var_names = df.columns  # Set column (barcode) names
+    adata.obs_names = df.columns  # Set row (position) names
+    adata.var_names = df.index  # Set column (barcode) names
 
     # Write to .h5ad file
     adata.write_h5ad(h5ad_file)
     print(f"\th5ad conversion complete. Output saved to {h5ad_file}.")
 
+
+
+def concatenate_coverage_adatas(adata_dict):
+    # Step 1: Get the union of all variable names (columns)
+    all_vars = set()
+    for adata in adata_dict.values():
+        all_vars.update(adata.var_names)
+    
+    # Convert to a sorted list for consistent ordering
+    all_vars = sorted(all_vars)
+    
+    # Step 2: Align each AnnData object to the union of variables
+    aligned_adatas = []
+    for adata in adata_dict.values():
+        # Find missing variables
+        missing_vars = [var for var in all_vars if var not in adata.var_names]
+        # Create a sparse matrix of zeros for missing variables
+        zeros_matrix = sp.csr_matrix((adata.n_obs, len(missing_vars)))
+        # Concatenate the existing matrix with the zeros matrix
+        existing_matrix = adata[:, [var for var in adata.var_names if var in all_vars]].X
+        aligned_matrix = sp.hstack([existing_matrix, zeros_matrix], format='csr')
+        
+        # Create a new DataFrame for `var` to include all_vars
+        new_var = pd.DataFrame(index=all_vars)
+        aligned_adata = ad.AnnData(X=aligned_matrix, obs=adata.obs.copy(), var=new_var)
+        aligned_adata.var_names = all_vars
+        aligned_adatas.append(aligned_adata)
+    
+        # Step 3: Concatenate the aligned AnnData objects along the observation axis
+        combined_adata = ad.concat(aligned_adatas, axis=0, join='outer')
+    
+    return combined_adata
 
 
 def prepare_matrix_files_multiprocess(output_matrix_folder, 
@@ -1039,7 +1081,27 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
     with Pool(processes=processes) as pool:
         pool.map(merge_files_by_chromosome, task_args)
 
-    print("All columnar merges complete.\n")
+    print("All columnar merges complete.\n\n Now combining all contig-specific sparse matrices into one overall sparse matrix...")
+
+    # Delete the .tsv versions of the coverage matrices 
+    for f in glob(f'{output_folder}/*comprehensive_coverage_matrix.tsv'):
+        os.remove(f)
+    
+    # Move the per-contig coverage matrices h5ad files into a subfolder to keep the output area clean
+    os.makedirs(f"{output_folder}/per_contig_coverage_matrices", exist_ok=True)
+    
+    h5_filepaths = glob(f'{output_folder}/*comprehensive_coverage_matrix.h5ad')
+    adata_dict = {}
+    for h5_filepath in h5_filepaths:
+        print(f"\t{h5_filepath}")
+        adata_dict[h5_filepath.split('/')[-1].split('_comprehensive')[0]] = ad.read_h5ad(h5_filepath)
+
+        shutil.move(h5_filepath, f"{output_folder}/per_contig_coverage_matrices/{h5_filepath.split('/')[-1]}")
+            
+    combined_adata = concatenate_coverage_adatas(adata_dict)
+    combined_adata.write_h5ad(f"{output_folder}/comprehensive_coverage_matrix.h5ad")
+
+    
 
 
 
