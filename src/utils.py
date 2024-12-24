@@ -1158,7 +1158,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
     # Move the per-contig coverage matrices h5ad files into a subfolder to keep the output area clean
     os.makedirs(f"{output_folder}/per_contig_coverage_matrices", exist_ok=True)
     
-    h5_filepaths = glob(f'{output_folder}/*comprehensive_coverage_matrix.h5ad')
+    h5_filepaths = glob(f'{output_folder}/*_comprehensive_coverage_matrix.h5ad')
     adata_dict = {}
     for h5_filepath in h5_filepaths:
         print(f"\t{h5_filepath}")

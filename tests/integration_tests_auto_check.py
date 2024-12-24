@@ -472,18 +472,28 @@ def get_all_edited_positions_and_barcodes(test_folder):
 print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
 
 coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes(test_folder)
+
+print('gc_edits_adata: {}'.format(len(gc_edits_adata)))
+print('ag_edits_adata: {}'.format(len(ag_edits_adata)))
+print('ct_edits_adata: {}'.format(len(ct_edits_adata)))
+
 try:
     assert(ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 1)
     assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 12)
+    print("\t\t9:3000528 passed...")
     
     assert(ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 1)
     assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 3)
-    
+    print("\t\t9:3000508 passed...")
+
     assert(ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 10)
     assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 12)
+    print("\t\t9:3000527 passed...")
 
     assert(gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 1)
     assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 4)
+    print("\t\t9:3000525 passed...")
+
     print("\n\t >>> coverage matrix and edit matrix values confirmation passed! <<<\n")
 
 except Exception as e:
