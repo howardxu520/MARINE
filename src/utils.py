@@ -1109,8 +1109,6 @@ def combine_coverage_adatas(adata_dict):
     
         aligned_adatas.append(sparse_adata)
         
-        if adatas_processed == 3:
-            break
     # Step 3: Concatenate the aligned AnnData objects along the observation axis
     combined_adata = sum_adata_cellwise(aligned_adatas)
     
