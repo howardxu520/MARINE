@@ -2,6 +2,9 @@ import pandas as pd
 import sys
 import os
 from glob import glob
+import anndata as ad
+import scipy.sparse as sp
+import anndata
 
 
 test_name_to_expectations = {
@@ -363,6 +366,131 @@ except Exception as e:
     print("\n\t ~~~ single cell vs bulk modes on sc dataset equivalency test FAILED! ~~~\n")
     failures += 1
 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#     Check that the coverage and edit matrices are correct
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+print("Checking that the position X barcode coverage and edit h5ad sparse matrices are correct and contain the same information as the flat tsv final sites.")
+
+test_folder = 'singlecell_tests/only_5_cells_all_cells_coverage_test/'
+
+def get_all_edited_positions_and_barcodes(test_folder):
+    name_to_obs = {}
+    name_to_pos = {}
+    name_to_adata = {}
+
+    coverage_and_edit_matrices = sorted(glob('{}/final_matrix_outputs/per_contig_coverage_matrices/*.h5ad'.format(test_folder))) + sorted(glob('{}/final_matrix_outputs/*edits_matrix.h5ad'.format(test_folder)))
+    print('coverage_and_edit_matrices', len(coverage_and_edit_matrices))
+    
+    for f in coverage_and_edit_matrices:
+        filename = f.split('/')[-1].split('.h5ad')[0]
+
+        if filename.startswith('comprehensive') and not 'edits' in filename:
+            continue
+
+        # Load the AnnData object
+        adata = ad.read_h5ad(f)
+    
+        print(filename, '\n\t', adata)
+
+        name_to_adata[filename] = adata
+        name_to_obs[filename] = set(adata.obs.index.tolist())
+        name_to_pos[filename] = set(adata.var.index.tolist())
+    
+    covered_pos = set()
+    covered_obs = set()
+    
+    edited_pos = set()
+    edited_obs = set()
+    
+    for k,v in name_to_obs.items():
+        if 'coverage' in k:
+            covered_obs = covered_obs.union(v)
+        else:
+            edited_obs = edited_obs.union(v)
+            
+    for k,v in name_to_pos.items():
+        if 'coverage' in k:
+            covered_pos = covered_pos.union(v)
+        else:
+            edited_pos = edited_pos.union(v)
+
+    final_filtered_site_info = pd.read_csv(f'{test_folder}/final_filtered_site_info.tsv', sep='\t')
+    final_filtered_site_info['CombinedPosition'] = \
+final_filtered_site_info['contig'].astype(str) + ':' + final_filtered_site_info['position'].astype(str)
+
+    
+    return edited_pos, covered_pos, edited_obs, covered_obs, \
+    final_filtered_site_info, name_to_pos, name_to_obs, name_to_adata
+    
+edited_pos, covered_pos, edited_obs, covered_obs, final_filtered_site_info,\
+name_to_pos, name_to_obs, name_to_adata = get_all_edited_positions_and_barcodes(test_folder)
+
+print('Checking that final_filtered_site_info.tsv set of contig:positions is same as in sparse matrices')
+assert(set(final_filtered_site_info.CombinedPosition) == edited_pos)
+print('Checking that final_filtered_site_info.tsv set of barcodes is same as in sparse matrices')
+assert(set(final_filtered_site_info.barcode) == edited_obs)
+
+print('edited barcodes: {}'.format(len(edited_obs)))
+print('covered barcodes: {}'.format(len(covered_obs)))
+try:
+    assert(edited_obs == covered_obs)
+    print("\n\t >>> coverage matrix / edit matrix barcode comparison passed! <<<\n")
+
+except Exception as e:
+    print("Exception: Edited barcodes are not same as covered barcodes")
+    print(e)
+    failures += 1
+
+print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+    
+print('edited positions: {}'.format(len(edited_pos)))
+print('covered positions: {}'.format(len(covered_pos)))
+try:
+    assert(edited_pos == covered_pos)
+    print("\n\t >>> coverage matrix / edit matrix position comparison passed! <<<\n")
+except Exception as e:
+    print("Exception: Edited positions are not same as covered positions")
+    print(e)
+    failures += 1
+
+# Execute test
+def get_all_edited_positions_and_barcodes(test_folder):
+    overall_coverage_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_coverage_matrix.h5ad"
+    overall_ct_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_C_T_edits_matrix.h5ad"
+    overall_ag_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_A_G_edits_matrix.h5ad"
+    overall_gc_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_G_C_edits_matrix.h5ad"
+    
+    # Load the AnnData object
+    coverage_adata = ad.read_h5ad(overall_coverage_matrix)
+    ct_edits_adata = ad.read_h5ad(overall_ct_edits_matrix)
+    ag_edits_adata = ad.read_h5ad(overall_ag_edits_matrix)
+    gc_edits_adata = ad.read_h5ad(overall_gc_edits_matrix)
+    
+    return coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata
+
+print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+
+coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes(test_folder)
+try:
+    assert(ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 1)
+    assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 12)
+    
+    assert(ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 1)
+    assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 3)
+    
+    assert(ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 10)
+    assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 12)
+
+    assert(gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 1)
+    assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 4)
+    print("\n\t >>> coverage matrix and edit matrix values confirmation passed! <<<\n")
+
+except Exception as e:
+    print(e)
+    print("Exception: Expected edit and coverage values not found in sparse matrices")
+    failures += 1
+    
 
 print("There were {} failures".format(failures))
 if failures > 0:
