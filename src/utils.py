@@ -1017,35 +1017,105 @@ def merge_files_by_chromosome(args):
 
 
 
-def concatenate_coverage_adatas(adata_dict):
-    # Step 1: Get the union of all variable names (columns)
-    all_vars = set()
+def create_zeros_df(indices, columns):
+    return pd.DataFrame.sparse.from_spmatrix(
+        sp.csr_matrix((len(indices), len(columns))),
+        index=indices,
+        columns=columns
+    )
+
+
+def sum_adata_cellwise(adatas):
+    """
+    Sums the values of multiple AnnData objects cell-wise (across observations).
+    Assumes all AnnData objects have the same `obs` and `var` indices.
+    
+    Parameters:
+        adatas (list of AnnData): List of AnnData objects to sum.
+    
+    Returns:
+        AnnData: A new AnnData object with summed values.
+    """
+    # Check that all AnnData objects have the same indices
+    obs_names = adatas[0].obs_names
+    var_names = adatas[0].var_names
+    for adata in adatas:
+        assert np.array_equal(adata.obs_names, obs_names), "All obs indices must match."
+        assert np.array_equal(adata.var_names, var_names), "All var indices must match."
+
+    # Sum the X matrices across all AnnData objects
+    summed_X = sum(adata.X for adata in adatas)
+
+    # If the result is not sparse, convert it to a sparse matrix
+    if not sp.issparse(summed_X):
+        summed_X = sp.csr_matrix(summed_X)
+
+    # Create a new AnnData object with the summed matrix
+    summed_adata = ad.AnnData(X=summed_X, obs=adatas[0].obs, var=adatas[0].var)
+
+    return summed_adata
+
+
+def combine_coverage_adatas(adata_dict):
+    """
+    Combines multiple AnnData objects, aligning them to the union of all barcodes (obs_names)
+    and positions (var_names). Missing values are filled with zeros.
+    """
+    # Step 1: Get the union of all positions (var_names) and barcodes (obs_names)
+    all_pos = set()
+    all_obs = set()
+    
     for adata in adata_dict.values():
-        all_vars.update(adata.var_names)
+        all_pos.update(adata.var.index)
+        all_obs.update(adata.obs.index)
     
-    # Convert to a sorted list for consistent ordering
-    all_vars = sorted(all_vars)
+    # Convert to sorted lists for consistent ordering
+    all_pos = sorted(list(all_pos))
+    all_obs = sorted(list(all_obs))
     
-    # Step 2: Align each AnnData object to the union of variables
+    
     aligned_adatas = []
+    adatas_processed = 0
     for adata in adata_dict.values():
-        # Find missing variables
-        missing_vars = [var for var in all_vars if var not in adata.var_names]
-        # Create a sparse matrix of zeros for missing variables
-        zeros_matrix = sp.csr_matrix((adata.n_obs, len(missing_vars)))
-        # Concatenate the existing matrix with the zeros matrix
-        existing_matrix = adata[:, [var for var in adata.var_names if var in all_vars]].X
-        aligned_matrix = sp.hstack([existing_matrix, zeros_matrix], format='csr')
+        adatas_processed += 1
+        print("\t{}/{} adatas concatenated...".format(adatas_processed, len(adata_dict)))
         
-        # Create a new DataFrame for `var` to include all_vars
-        new_var = pd.DataFrame(index=all_vars)
-        aligned_adata = ad.AnnData(X=aligned_matrix, obs=adata.obs.copy(), var=new_var)
-        aligned_adata.var_names = all_vars
-        aligned_adatas.append(aligned_adata)
+        dense_adata = pd.DataFrame(adata.X.todense(), index=adata.obs.index, columns=adata.var.index)
+        missing_barcodes = [b for b in all_obs if b not in dense_adata.index]
+        missing_positions = [p for p in all_pos if p not in dense_adata.columns]
     
-        # Step 3: Concatenate the aligned AnnData objects along the observation axis
-        combined_adata = ad.concat(aligned_adatas, axis=0, join='outer')
+        # First add set of empty rows for missing barcodes, with existing columns as columns
+        missing_barcode_fix = create_zeros_df(missing_barcodes, list(dense_adata.columns))
+        
+        dense_adata = (dense_adata.T).join(missing_barcode_fix.T, how='inner').T
+        assert(len(dense_adata) == len(all_obs))
     
+        # Now, add a set of empty columns for the missing positions, with all barcodes as indices
+        # Create a sparse DataFrame with zeros
+        missing_position_fix = create_zeros_df(all_obs, missing_positions)
+    
+        dense_adata = dense_adata.join(missing_position_fix, how='inner')
+        assert(len(dense_adata.columns) == len(all_pos))
+
+        # Convert the dense matrix to a sparse CSR matrix
+        sparse_X = sp.csr_matrix(dense_adata)
+        # Create a new AnnData object with the sparse matrix
+
+        # Correctly assign obs and var as DataFrames
+        obs_df = pd.DataFrame(index=all_obs)
+        var_df = pd.DataFrame(index=all_pos)
+    
+        sparse_adata = ad.AnnData(X=sparse_X, obs=obs_df, var=var_df)
+    
+        aligned_adatas.append(sparse_adata)
+        
+        if adatas_processed == 3:
+            break
+    # Step 3: Concatenate the aligned AnnData objects along the observation axis
+    combined_adata = sum_adata_cellwise(aligned_adatas)
+    
+    assert(combined_adata.shape == (len(all_obs), len(all_pos)))
+    print("Shape of combined adata is {}".format(combined_adata.shape))
     return combined_adata
 
 
@@ -1098,10 +1168,8 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
 
         shutil.move(h5_filepath, f"{output_folder}/per_contig_coverage_matrices/{h5_filepath.split('/')[-1]}")
             
-    combined_adata = concatenate_coverage_adatas(adata_dict)
+    combined_adata = combine_coverage_adatas(adata_dict)
     combined_adata.write_h5ad(f"{output_folder}/comprehensive_coverage_matrix.h5ad")
-
-    
 
 
 
