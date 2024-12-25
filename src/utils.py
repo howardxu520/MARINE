@@ -1097,7 +1097,7 @@ def combine_coverage_adatas(adata_dict):
         dense_adata = dense_adata.join(missing_position_fix, how='inner')
         assert(len(dense_adata.columns) == len(all_pos))
 
-        dense_adata.columns = sorted(dense_adata.columns)
+        dense_adata = dense_adata[sorted(dense_adata.columns)]
         dense_adata = dense_adata.sort_index()
         
         # Convert the dense matrix to a sparse CSR matrix
