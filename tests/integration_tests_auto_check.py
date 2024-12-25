@@ -472,24 +472,63 @@ def get_all_edited_positions_and_barcodes(test_folder):
 print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
 
 coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes(test_folder)
+
+print('gc_edits_adata: {}'.format(len(gc_edits_adata)))
+print('ag_edits_adata: {}'.format(len(ag_edits_adata)))
+print('ct_edits_adata: {}'.format(len(ct_edits_adata)))
+
 try:
+    print('ct_edits_adata', pd.DataFrame(ct_edits_adata.X.todense(),
+                                         index=ct_edits_adata.obs.index, 
+                                         columns=ct_edits_adata.var.index), '\n')
+    
+    print('ag_edits_adata', pd.DataFrame(ag_edits_adata.X.todense(),
+                                         index=ag_edits_adata.obs.index, 
+                                         columns=ag_edits_adata.var.index), '\n')
+
+    print('gc_edits_adata', pd.DataFrame(gc_edits_adata.X.todense(),
+                                         index=gc_edits_adata.obs.index, 
+                                         columns=gc_edits_adata.var.index), '\n')
+    
+    print('coverage_adata', pd.DataFrame(coverage_adata.X.todense(),
+                                         index=coverage_adata.obs.index, 
+                                         columns=coverage_adata.var.index)[['9:3000508', '9:3000527', '9:3000528']], '\n')
+          
+    print('\t', ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense())
+    print('\t', coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense())
+    
     assert(ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 1)
     assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 12)
+    print("\t\t9:3000528 passed...")
+
+    print('\t', ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense())
+    print('\t', coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense())
     
     assert(ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 1)
     assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 3)
+    print("\t\t9:3000508 passed...")
+
+    print('\t', ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense())
+    print('\t', coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense())
     
     assert(ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 10)
     assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 12)
+    print("\t\t9:3000527 passed...")
 
-    assert(gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 1)
+    print('\t', gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense())
+    print('\t', coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense())
+    
+    assert(gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense()== 1)
     assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 4)
+    print("\t\t9:3000525 passed...")
+
     print("\n\t >>> coverage matrix and edit matrix values confirmation passed! <<<\n")
 
 except Exception as e:
-    print(e)
+    print('Error', e)
     print("Exception: Expected edit and coverage values not found in sparse matrices")
     failures += 1
+    raise(e)
     
 
 print("There were {} failures".format(failures))
