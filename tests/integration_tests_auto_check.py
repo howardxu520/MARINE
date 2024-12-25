@@ -478,6 +478,22 @@ print('ag_edits_adata: {}'.format(len(ag_edits_adata)))
 print('ct_edits_adata: {}'.format(len(ct_edits_adata)))
 
 try:
+    print('ct_edits_adata', pd.DataFrame(ct_edits_adata.X.todense(),
+                                         index=ct_edits_adata.obs.index, 
+                                         columns=ct_edits_adata.var.index), '\n')
+    
+    print('ag_edits_adata', pd.DataFrame(ag_edits_adata.X.todense(),
+                                         index=ag_edits_adata.obs.index, 
+                                         columns=ag_edits_adata.var.index), '\n')
+
+    print('gc_edits_adata', pd.DataFrame(gc_edits_adata.X.todense(),
+                                         index=gc_edits_adata.obs.index, 
+                                         columns=gc_edits_adata.var.index), '\n')
+    
+    print('coverage_adata', pd.DataFrame(coverage_adata.X.todense(),
+                                         index=coverage_adata.obs.index, 
+                                         columns=coverage_adata.var.index)[['9:3000508', '9:3000527', '9:3000528']], '\n')
+          
     print('\t', ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense())
     print('\t', coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense())
     
