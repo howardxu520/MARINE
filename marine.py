@@ -123,7 +123,7 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
     df = pd.read_csv(input_file, sep="\t")
     print(f"\n{len(df)} positions in {input_file}...")
     
-    # Filter by tabulation bed-specified positions
+    # Filter by tabulation bed-specified positions 
     if tabulation_bed:
         df['contig_position'] = df['contig'].astype(str) + '_' + df['position'].astype(str)
         tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
@@ -135,11 +135,12 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
         positions_to_keep = valid_positions.intersection(set(tabulation_bed_df.contig_position))
         
         print(f"\t{len(positions_to_keep)} out of {len(valid_positions)} specified positions in {tabulation_bed} are valid")
-        df = df[df['contig_position'].isin(positions_to_keep)]
-
-    # Pivot edit dataframe
-    print("Pivoting edits dataframe into sparse h5ad files...")
-    pivot_edits_to_sparse(df, output_folder)
+        tabulation_edits_df = df[df['contig_position'].isin(positions_to_keep)]
+        pivot_edits_to_sparse(tabulation_edits_df, output_folder)
+    else:
+        # Pivot edit dataframe without filtering sites
+        print("Pivoting edits dataframe into sparse h5ad files...")
+        pivot_edits_to_sparse(df, output_folder)
 
     pretty_print('Splitting bedfile locations to enable efficient coverage calculation at all positions...',
                  style='.')
