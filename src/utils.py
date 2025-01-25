@@ -176,8 +176,6 @@ def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix='
     """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-
-    single_cell_approach = len(bam_filepaths) > 0
     
     suffix_pairs = [
         (os.path.basename(bam).split("_")[0], 
@@ -278,8 +276,11 @@ def pivot_edits_to_sparse(df, output_folder):
     for strand_conversion in df.strand_conversion.unique():
         print(f"\tProcessing strand_conversion: {strand_conversion}")
 
+        df_for_strand_conversion = df[df.strand_conversion == strand_conversion]
+        print(f"\t\t{len(df_for_strand_conversion)} edits for {strand_conversion}")
+        
         # Pivot the dataframe
-        pivoted_df = df[df.strand_conversion == strand_conversion].pivot(
+        pivoted_df = df_for_strand_conversion.pivot(
             index="CombinedPosition", 
             columns="barcode", 
             values="count"
@@ -474,19 +475,23 @@ def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path
         bam_handles_for_barcodes[barcode_bam_file_path] = bam_for_barcode
 
     bam_for_barcode.write(read)
-    
+
 def remove_file_if_exists(file_path):
-    if os.path.exists(file_path):
-        #print("{} exists... deleting".format(file_path))
-        os.remove(file_path)
-        
+    if os.path.exists(file_path):  # Check if the path exists
+        try:
+            if os.path.isdir(file_path):  # If it's a directory, remove it with shutil.rmtree
+                shutil.rmtree(file_path)
+            else:  # If it's a file, use os.remove
+                os.remove(file_path)
+        except Exception as e:
+            print(f"Error while deleting {file_path}: {e}")
+
 def make_folder(folder_path):
     if not os.path.exists(folder_path):
         try:
             os.mkdir(folder_path)
         except Exception as e:
             pass
-            #sys.stderr.write('{}_{}\n'.format(folder_path, e))
 
 def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)
@@ -1156,7 +1161,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
 
     # Delete the .tsv versions of the coverage matrices 
     for f in glob(f'{output_folder}/*comprehensive_coverage_matrix.tsv'):
-        os.remove(f)
+        remove_file_if_exists(f)
     
     # Move the per-contig coverage matrices h5ad files into a subfolder to keep the output area clean
     os.makedirs(f"{output_folder}/per_contig_coverage_matrices", exist_ok=True)
@@ -1489,7 +1494,8 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
     return 'Done'
 
 
-def delete_intermediate_files(output_folder):
+def delete_intermediate_files(output_folder, contains=None):
+    
     to_delete = ['coverage', 'edit_info', 'split_bams', 'combined_all_cells_split_by_suffix',
                  'combined_source_cells_split_by_suffix',
                  'matrix_outputs',
@@ -1499,11 +1505,14 @@ def delete_intermediate_files(output_folder):
                  'depths_source_cells.txt', 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv',
                  'combined_all_cells.bed', 'depth_commands_all_cells.sh', 'depth_commands_all_cells.txt', 'depths_all_cells.txt', 'combined_source_cells.bed'
                 ]
+    
     for object in to_delete:
+
+        if contains is not None:
+            if contains not in object:
+                continue
+
         object_path = '{}/{}'.format(output_folder, object)
 
-        if os.path.exists(object_path):
-            if os.path.isfile(object_path):
-                os.remove(object_path)
-            else:
-                shutil.rmtree(object_path)
+        sys.stdout.write(f"~~~~ WARNING: Removing existing object\n{object_path}\n")
+        remove_file_if_exists(object_path)
