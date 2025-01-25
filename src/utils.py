@@ -246,24 +246,26 @@ def get_broken_up_contigs(contigs, num_per_sublist):
     return broken_up_contigs
 
 
-def pivot_edits_to_sparse(df, output_folder):
+def pivot_edits_to_sparse(df, output_folder, overall_barcodes_list, overall_positions_list):
     """
     Convert a dense dataframe of edit information into a sparse matrix and save it as an AnnData object.
 
     Args:
         df (pd.DataFrame): Dataframe containing edit information with columns 'contig', 'position', 'barcode', and 'count'.
         output_folder (str): Path to the output folder for saving results.
+        overall_barcodes_list (list): Complete list of barcodes to include in the matrix.
+        overall_positions_list (list): Complete list of genomic positions to include in the matrix.
 
     Process:
         - Combine 'contig' and 'position' into a single column.
         - Filter data by strand conversion type.
+        - Ensure all barcodes and positions are included in the pivot table.
         - Pivot data to create a matrix with rows as genomic positions and columns as barcodes.
         - Convert the matrix to a sparse format and save as .h5ad.
 
     Saves:
         - Sparse matrix files in AnnData format (.h5ad) in the 'final_matrix_outputs' directory.
     """
-    
     # Create a new column for contig:position
     df["CombinedPosition"] = df["contig"].astype(str) + ":" + df["position"].astype(str)
 
@@ -272,22 +274,23 @@ def pivot_edits_to_sparse(df, output_folder):
     os.makedirs(final_output_dir, exist_ok=True)
 
     print(f"Saving edit sparse matrices to {final_output_dir}")
-    
+
     for strand_conversion in df.strand_conversion.unique():
         print(f"\tProcessing strand_conversion: {strand_conversion}")
 
+        # Filter the dataframe for the current strand_conversion
         df_for_strand_conversion = df[df.strand_conversion == strand_conversion]
         print(f"\t\t{len(df_for_strand_conversion)} edits for {strand_conversion}")
-        
-        # Pivot the dataframe
+
+        # Pivot the dataframe        
         pivoted_df = df_for_strand_conversion.pivot(
-            index="CombinedPosition", 
-            columns="barcode", 
+            index="CombinedPosition",
+            columns="barcode",
             values="count"
         )
 
-        # Replace NaN with 0 for missing values
-        pivoted_df = pivoted_df.fillna(0)
+        # Reindex the pivot table to include all positions and barcodes
+        pivoted_df = pivoted_df.reindex(index=overall_positions_list, columns=overall_barcodes_list, fill_value=0)
 
         # Convert to a sparse matrix
         sparse_matrix = csr_matrix(pivoted_df.values.T)
@@ -295,19 +298,15 @@ def pivot_edits_to_sparse(df, output_folder):
         # Create an AnnData object
         adata = ad.AnnData(
             X=sparse_matrix,
-            obs=pd.DataFrame(index=pivoted_df.columns),  # Row (site) metadata
-            var=pd.DataFrame(index=pivoted_df.index)  # Column (barcode) metadata
+            obs=pd.DataFrame(index=pivoted_df.columns),  # Row (barcode) metadata
+            var=pd.DataFrame(index=pivoted_df.index)  # Column (position) metadata
         )
 
         # Save the AnnData object
         output_file_name = f"comprehensive_{strand_conversion.replace('>', '_')}_edits_matrix.h5ad"
-        output_file = os.path.join(
-            final_output_dir,
-            output_file_name
-        )
+        output_file = os.path.join(final_output_dir, output_file_name)
         adata.write(output_file)
         print(f"\t\tSaved sparse matrix for {strand_conversion} to {output_file_name}")
-
 
 def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
     

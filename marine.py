@@ -95,6 +95,9 @@ def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suff
 
     # Prepare combinations of chromosomes and suffix pairs
     combinations = []
+    overall_barcodes_list = set()
+    overall_positions_list = set()
+
     for chrom in unique_chromosomes:
         print(f"\tChecking {chrom}...")
 
@@ -102,6 +105,7 @@ def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suff
         df['contig'] = df['contig'].astype(str)
         df_for_chrom = df[df['contig'] == chrom]
         unique_positions = df_for_chrom.position.unique()
+        overall_positions_list = overall_positions_list.union(set([f'{chrom}:{p}' for p in list(unique_positions)]))
         
         for prefix, suffix in suffix_pairs:
             # ('9', 'A-1'), would indicate the bam containing all reads on chromosome 9 originating from
@@ -117,13 +121,19 @@ def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suff
                 print(f"\t\t\tBam filepath: {bam_filepath}")
                 
                 unique_barcodes = get_unique_barcodes(bam_filepath)
+                
+                overall_barcodes_list = overall_barcodes_list.union(set(unique_barcodes))
+                
                 print(f"\t\t\t{prefix}_{suffix}: Unique positions: {len(unique_positions)}, Unique barcodes: {len(unique_barcodes)}")
                 
                 combinations.append((chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix))
     
                 
-            
-    return combinations
+    # We want to return all combinations, but also all unique barcodes and all unique positions overall
+    # so that we can use these lists to ensure our edit h5ad object has all rows and columns necessary,
+    # even at positions that weren't necessarily edited (would just be a row of entirely 0s)
+    print(f"\nFound {len(overall_barcodes_list)} unique barcodes and {len(overall_positions_list)} unique positions.\n")
+    return combinations, sorted(list(overall_barcodes_list)), sorted(list(overall_positions_list))
 
 def process_combination_for_split(args):
     """
@@ -201,30 +211,31 @@ def generate_and_split_bed_files_for_all_positions(output_folder, bam_filepaths,
         print(f"\t{len(positions_to_keep)} out of {len(unique_tabulation_bed_sites)} specified positions in {tabulation_bed} were found to have edits")
         tabulation_edits_df = df[df['contig_position'].isin(positions_to_keep)]
 
-        # Pivot dataframe of edits only at specified tabulation sites
-        print("Pivoting tabulation-specified edits dataframe into sparse h5ad files...")
-        pivot_edits_to_sparse(tabulation_edits_df, output_folder)
-
         # Calculate coverage in all cells only at the positions specified in tabulation bed
-        combinations = prepare_combinations_for_split(
+        combinations, overall_barcodes_list, overall_positions_list = prepare_combinations_for_split(
             tabulation_bed_df, 
             bam_filepaths, 
             split_bed_folder, 
             output_suffix
         )
+
+        # Pivot dataframe of edits only at specified tabulation sites
+        print("Pivoting tabulation-specified edits dataframe into sparse h5ad files...")
+        pivot_edits_to_sparse(tabulation_edits_df, output_folder, overall_barcodes_list, overall_positions_list)
         
     else:
-        # Pivot whole edit dataframe without filtering for only specified tabulation sites
-        print("Pivoting all edits dataframe into sparse h5ad files...")
-        pivot_edits_to_sparse(df, output_folder)
-
         # Calculate coverage in all cells at all edited positions
-        combinations = prepare_combinations_for_split(
+        combinations, overall_barcodes_list, overall_positions_list = prepare_combinations_for_split(
             df, 
             bam_filepaths, 
             split_bed_folder,
             output_suffix
         )
+
+        # Pivot whole edit dataframe without filtering for only specified tabulation sites
+        print("Pivoting all edits dataframe into sparse h5ad files...")
+        pivot_edits_to_sparse(df, output_folder, overall_barcodes_list, overall_positions_list)
+
   
     # Run the processing with multiprocessing
     with Pool(processes=processes) as pool:

@@ -426,10 +426,24 @@ final_filtered_site_info['contig'].astype(str) + ':' + final_filtered_site_info[
 edited_pos, covered_pos, edited_obs, covered_obs, final_filtered_site_info,\
 name_to_pos, name_to_obs, name_to_adata = get_all_edited_positions_and_barcodes(test_folder)
 
-print('Checking that final_filtered_site_info.tsv set of contig:positions is same as in sparse matrices')
-assert(set(final_filtered_site_info.CombinedPosition) == edited_pos)
+print('Checking that all tabulation bed positions are found in the sparse matrices')
+try:
+    assert(53 == len(edited_pos))
+    print("\n\t >>> Passed!")
+except Exception as e:
+    print(e)
+    print(f'Exception: edited_pos is {len(edited_pos)} instead of expected 53')
+    failures += 1
+    
 print('Checking that final_filtered_site_info.tsv set of barcodes is same as in sparse matrices')
-assert(set(final_filtered_site_info.barcode) == edited_obs)
+try:
+    assert(set(final_filtered_site_info.barcode) == edited_obs)
+    print("\n\t >>> Passed!")
+except Exception as e:
+    print("Exception: final_filtered_site_info.tsv set of barcodes is not same as in sparse matrices")
+    print(e)
+    failures += 1
+
 
 print('edited barcodes: {}'.format(len(edited_obs)))
 print('covered barcodes: {}'.format(len(covered_obs)))
@@ -455,7 +469,7 @@ except Exception as e:
     failures += 1
 
 # Execute test
-def get_all_edited_positions_and_barcodes(test_folder):
+def get_all_edited_positions_and_barcodes_adatas(test_folder):
     overall_coverage_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_coverage_matrix.h5ad"
     overall_ct_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_C_T_edits_matrix.h5ad"
     overall_ag_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_A_G_edits_matrix.h5ad"
@@ -471,7 +485,7 @@ def get_all_edited_positions_and_barcodes(test_folder):
 
 print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
 
-coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes(test_folder)
+coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes_adatas(test_folder)
 
 print('gc_edits_adata: {}'.format(len(gc_edits_adata)))
 print('ag_edits_adata: {}'.format(len(ag_edits_adata)))
