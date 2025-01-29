@@ -306,7 +306,7 @@ def pivot_edits_to_sparse(df, output_folder, overall_barcodes_list, overall_posi
         output_file_name = f"comprehensive_{strand_conversion.replace('>', '_')}_edits_matrix.h5ad"
         output_file = os.path.join(final_output_dir, output_file_name)
         adata.write(output_file)
-        print(f"\t\tSaved sparse matrix for {strand_conversion} to {output_file_name}")
+        print(f"\t\tSaved sparse matrix ({adata.shape}) for {strand_conversion} to {output_file_name}")
 
 def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
     
@@ -989,7 +989,7 @@ def merge_files_by_chromosome(args):
         [f"<(cut -f2- {file})" for file in other_files]
     )
     paste_command = f"paste {first_file} {strip_headers_command} > {merged_file}"
-
+    print(f"\n\tMerge command: bash -c '{paste_command}'") 
     # Use bash to execute the paste command
     run_command(f"bash -c '{paste_command}'")
     print(f"\tColumnar merge complete for {chromosome}. Output saved to {merged_file}.")
@@ -1160,8 +1160,9 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
 
     # Delete the .tsv versions of the coverage matrices 
     for f in glob(f'{output_folder}/*comprehensive_coverage_matrix.tsv'):
-        remove_file_if_exists(f)
-    
+        #remove_file_if_exists(f)
+        pass
+        
     # Move the per-contig coverage matrices h5ad files into a subfolder to keep the output area clean
     os.makedirs(f"{output_folder}/per_contig_coverage_matrices", exist_ok=True)
     
@@ -1186,7 +1187,9 @@ def merge_depth_files(output_folder, output_suffix=''):
         
     depth_files = f"{output_folder}/coverage/depths_{output_suffix}*.txt"
     merged_depth_file = f"{output_folder}/depths_{output_suffix}.txt"
-    run_command(f"cat {depth_files} > {merged_depth_file}")
+    cat_command = f"cat {depth_files} > {merged_depth_file}"
+    print(f"\tcat command: {cat_command}")
+    run_command(cat_command)
     print(f"Depths merged into {merged_depth_file}.")
 
 
