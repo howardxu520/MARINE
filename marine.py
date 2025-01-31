@@ -179,6 +179,38 @@ def process_combination_for_split(args):
     print(f"\t\t\t>>> Processed {chrom}, {prefix}_{suffix} -> {output_file}")
     
 
+def filter_sites_using_tabulation_bed(df, tabulation_bed):
+    """Filters edit positions based on a tabulation bed file.
+
+    Arguments:
+        * df - dataframe of final sites 
+        * tabulation_bed - file path to bed file containing all sites where coverage calculation is desired
+    Returns:
+        * tabulation_bed_df - represents all sites in the tabulation bed file
+        * tabulation_edits_df - represents all sites in the tabulation bed file that have at least one edit 
+        * unique_tabulation_bed_sites - represents deduplicated site list based on tabulation bed locations
+    """
+    df['contig_position'] = df['contig'].astype(str) + '_' + df['position'].astype(str)
+    
+    tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
+    tabulation_bed_df['contig'] = tabulation_bed_df['chrom']
+    tabulation_bed_df['position'] = tabulation_bed_df['start'] # This should be the value matching edit sites
+    tabulation_bed_df['contig_position'] = tabulation_bed_df['chrom'].astype(str) + '_' + tabulation_bed_df['position'].astype(str)
+
+    unique_tabulation_bed_sites = tabulation_bed_df.contig_position.unique()
+    print(f"\t{len(unique_tabulation_bed_sites)} unique positions in {tabulation_bed}...")
+    print(f"\tExample rows:\n{tabulation_bed_df.head()}\n")
+
+    positions_with_edits = set(df['contig_position'])
+    positions_to_keep = positions_with_edits.intersection(unique_tabulation_bed_sites)
+    
+    print(f"\t{len(positions_to_keep)} out of {len(unique_tabulation_bed_sites)} specified positions were found to have edits.")
+
+    tabulation_edits_df = df[df['contig_position'].isin(positions_to_keep)]
+    
+    return tabulation_bed_df, tabulation_edits_df, unique_tabulation_bed_sites
+
+
 def generate_and_split_bed_files_for_all_positions(output_folder, bam_filepaths, tabulation_bed=None, processes=4, output_suffix="all_cells"):
     """
     Generates combined BED files for all edit sites and splits them into suffix-specific files.
@@ -211,57 +243,37 @@ def generate_and_split_bed_files_for_all_positions(output_folder, bam_filepaths,
             remove_file_if_exists(file)
     print("Existing .bed files removed. Starting fresh.")
 
-    
     # Filter by tabulation bed-specified positions
     if tabulation_bed:
-        df['contig_position'] = df['contig'].astype(str) + '_' + df['position'].astype(str)
-        tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
-        tabulation_bed_df['contig'] = tabulation_bed_df['chrom']
-        tabulation_bed_df['position'] = tabulation_bed_df['start'] # This should be the value matching edit sites
-        tabulation_bed_df['contig_position'] = tabulation_bed_df['chrom'].astype(str) + '_' + tabulation_bed_df['position'].astype(str)
-
-        unique_tabulation_bed_sites = tabulation_bed_df.contig_position.unique()
-        
-        print(f"\t{len(unique_tabulation_bed_sites)} unique positions in {tabulation_bed}...")
-        print("\n\tExample rows: {}\n".format(tabulation_bed_df.head()))
-
-        positions_with_edits = set(df['contig_position'])
-        positions_to_keep = positions_with_edits.intersection(set(tabulation_bed_df.contig_position))
-        
-        print(f"\t{len(positions_to_keep)} out of {len(unique_tabulation_bed_sites)} specified positions in {tabulation_bed} were found to have edits")
-        tabulation_edits_df = df[df['contig_position'].isin(positions_to_keep)]
-
-        # Calculate coverage in all cells only at the positions specified in tabulation bed
-        combinations, overall_barcodes_list, overall_positions_list = prepare_combinations_for_split(
-            tabulation_bed_df, 
-            bam_filepaths, 
-            split_bed_folder, 
-            output_suffix
-        )
-
         # Pivot dataframe of edits only at specified tabulation sites
-        print("Pivoting tabulation-specified edits dataframe into sparse h5ad files...")
-        pivot_edits_to_sparse(tabulation_edits_df, output_folder, overall_barcodes_list, overall_positions_list)
-        
+        print("Pivoting tabulation-based edits dataframe into sparse h5ad files...")
+        coverage_calc_sites_bed_df, edits_to_make_pivot_df, unique_tabulation_bed_sites = filter_sites_using_tabulation_bed(df, tabulation_bed)
+    else:
+        # Pivot dataframe of edits at all edit sites
+        print("Pivoting all edits dataframe into sparse h5ad files...")
+        edits_to_make_pivot_df = df
+        coverage_calc_sites_bed_df = df
+
+    print('edits_to_make_pivot_df', len(edits_to_make_pivot_df))
+    
+    # Calculate coverage in all cells only at the positions specified in tabulation bed
+    combinations, overall_barcodes_list, overall_positions_list = prepare_combinations_for_split(
+        coverage_calc_sites_bed_df, 
+        bam_filepaths, 
+        split_bed_folder, 
+        output_suffix
+    )
+
+    print("Pivoting edits dataframe into sparse h5ad files...")
+    pivot_edits_to_sparse(edits_to_make_pivot_df, output_folder, overall_barcodes_list, overall_positions_list)
+
+    if tabulation_bed:
         try:
             assert sorted([i.replace('_', ':') for i in unique_tabulation_bed_sites]) == overall_positions_list
         except AssertionError as e:
-            print(f"AssertionError: Overall positions derived for coverage calculation is not equal to tabulation sites: {e}")
+            print(f"AssertionError: Overall positions derived for coverage calculation is not equal to tabulation sites: {e}.\n {len(unique_tabulation_bed_sites)} in tabulation bed, {len(overall_positions_list)} derived positions")
             raise  # Properly re-raise the exception
             
-    else:
-        # Calculate coverage in all cells at all edited positions
-        combinations, overall_barcodes_list, overall_positions_list = prepare_combinations_for_split(
-            df, 
-            bam_filepaths, 
-            split_bed_folder,
-            output_suffix
-        )
-
-        # Pivot whole edit dataframe without filtering for only specified tabulation sites
-        print("Pivoting all edits dataframe into sparse h5ad files...")
-        pivot_edits_to_sparse(df, output_folder, overall_barcodes_list, overall_positions_list)
-
     # Run the processing with multiprocessing
     with Pool(processes=processes) as pool:
         pool.map(process_combination_for_split, combinations)

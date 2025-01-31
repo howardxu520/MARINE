@@ -1120,7 +1120,6 @@ def combine_coverage_adatas(adata_dict):
     combined_adata = sum_adata_cellwise(aligned_adatas)
     
     assert(combined_adata.shape == (len(all_obs), len(all_pos)))
-    print("Shape of combined adata is {}".format(combined_adata.shape))
     return combined_adata
 
 
@@ -1175,6 +1174,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
         shutil.move(h5_filepath, f"{output_folder}/per_contig_coverage_matrices/{h5_filepath.split('/')[-1]}")
             
     combined_adata = combine_coverage_adatas(adata_dict)
+    print(f"\tShape of combined comprehensive coverage adata is {combined_adata.shape}")
     combined_adata.write_h5ad(f"{output_folder}/comprehensive_coverage_matrix.h5ad")
 
 
@@ -1193,6 +1193,12 @@ def merge_depth_files(output_folder, output_suffix=''):
     print(f"Depths merged into {merged_depth_file}.")
 
 
+def format_time(seconds):
+    """Convert seconds into HH:MM:SS.ssssss format with correct fractional seconds."""
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours):02}:{int(minutes):02}:{seconds:06.3f}"  # Keep fractional seconds
+
 
 def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matrix_folder):
     """
@@ -1200,9 +1206,7 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
     """
 
     depths_file = output_filepath
-    
-    print(f"\tRunning samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}\n")
-    
+        
     regions = []
     with open(bed_filepath, "r") as bed:
         for line in bed:
@@ -1210,8 +1214,11 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
             chrom, start, end = fields[0], int(fields[1]), int(fields[2])
             regions.append((chrom, start, end))
 
+    start_time = time.perf_counter()  # High-precision start time
+
     if len(regions) > 0:
-        print(f"\t{bed_filepath.split('/')[-1]}: {len(regions)} regions")
+        print(f"\tRunning samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}\n")
+        print(f"\t-> {bed_filepath.split('/')[-1]}: {len(regions)} regions\n")
         
         with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
             try:
@@ -1231,13 +1238,19 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
                         f"Error processing bam {bam_filepath} using bed {bed_filepath} at {chrom}:{start}-{end}, "
                         f"outputting to {depths_file}: {e}"
                     )
-                    
+
+        elapsed_time = time.perf_counter() - start_time  # Calculate high-precision elapsed time
+        print(f"\t\tDone outputting depths to {os.path.basename(output_filepath)} (time: {format_time(elapsed_time)})...")
+        
         if output_matrix_folder:
             matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
         
             if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
                 # Pivot the depths output file into a matrix
                 pivot_depths_output(depths_file, matrix_output_file)
+                
+            total_elapsed_time = time.perf_counter() - start_time  # Update time after matrix output
+            print(f"\t\t\tDone outputting pivoted depths to {os.path.basename(matrix_output_file)} (total time: {format_time(total_elapsed_time)})...\n")
 
 
 def run_pysam_count_coverage(args_list, processes):
@@ -1325,6 +1338,7 @@ def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_fold
         pretty_print("\nCalculating depths using multiprocessing with pysam...", style='.')
         run_pysam_count_coverage(pysam_coverage_args, processes)
 
+        pretty_print("\nFinished calculating depths, now merging output depth files...", style='.')
         merge_depth_files(output_folder, output_suffix)
 
         if pivot:
@@ -1332,7 +1346,7 @@ def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_fold
             final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"
             os.makedirs(final_combined_matrices_folder, exist_ok=True)
         
-            print("\nRunning pivot...\n")
+            pretty_print("\nRunning pivot...", style='.')
             prepare_matrix_files_multiprocess(
                 output_matrix_folder, 
                 final_combined_matrices_folder,
