@@ -20,7 +20,7 @@ for t in "no_edits_edge_case_test" "F1R2_pair_test-single_end_mode_sailor" "F1R2
 do
     echo $t
     echo "Removing old files..."
-    rm $MARINE/tests/$tests_folder$t/* -r
+    rm $MARINE/tests/$tests_folder$t/* -r || true
 
     echo "Running tests..."
     bash $MARINE/tests/$tests_folder/scripts/$t.sh $mypython
@@ -42,7 +42,7 @@ for t in "only_5_cells_test" "only_5_cells_bulk_mode_test" "only_5_cells_all_cel
 do
     echo $t
     echo "Removing old files..."
-    rm $MARINE/tests/$tests_folder$t/* -r
+    rm $MARINE/tests/$tests_folder$t/* -r || true
 
     echo "Running tests..."
     bash $MARINE/tests/$tests_folder/scripts/$t.sh $mypython
