@@ -1,3 +1,5 @@
+set -e
+
 mypython=$1
 
 echo "Python is $mypython"
