@@ -8,7 +8,12 @@ import anndata
 
 
 test_name_to_expectations = {
-"edge_case_test": {
+    "no_edits_edge_case_test": {
+        "folder": "strandedness_tests",
+        "total_edit_sites": 0,
+        "expectations": []
+    },
+    "edge_case_test": {
         "folder": "singlecell_tests",
         "total_edit_sites": 2,
         "expectations": [{
