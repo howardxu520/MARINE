@@ -18,7 +18,7 @@ jobs:
 
       - name: Install Mamba
         run: |
-          conda install -c conda-forge mamba=1.5.11 -y 
+          conda install -c conda-forge mamba=1.5.12 -y 
           
       - name: Print conda folder contents
         run: |
@@ -28,7 +28,7 @@ jobs:
            
       - name: Create Conda Environment
         run: |
-          /usr/share/miniconda/bin/mamba create -n marine_environment python=3.8.18 -y
+          /usr/share/miniconda/bin/mamba create -n marine_environment python=3.10 -y
           /usr/share/miniconda/bin/mamba env update -n marine_environment --file marine_environment2.yaml
 
       - name: Print marine_environment bin folder contents
