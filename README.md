@@ -140,9 +140,54 @@ Expected example outputs are contained in the subfolders in the examples folder.
 
 MARINE will calculate edits and coverage on a per-cell basis. For example, the G at position 3000525 occurs in a region in the cell with the barcode ending in CGG-1, which only has 4 reads at that location. Meanwhile, the T at this position occurs instead in the cell with barcode ending in CAC-1 with 12 reads. These cell-specific edit counts and coverages will be reflected in MARINE outputs. Strandedness for 10X inputs should be 2.
 
-Note: MARINE by default will filter out UMI duplicates based on the xf:i:25 tag at explained here: https://www.10xgenomics.com/analysis-guides/tutorial-navigating-10x-barcoded-bam-files
+* Note: The --all_cells_coverage flag can be used if you wish to generate .h5ad-formatted adata objects containing sparse matrices of barcodes x positions, for both read and edit counts at each edited position in each cell. However, as this involves counting coverage at every site within every cell, and since raw edited site counts can be quite high, it is not recommended to use this flag without an accompanying list of sites for which these adata objects should be generated. 
+
+* Note: MARINE by default will filter out UMI duplicates based on the xf:i:25 tag at explained here: https://www.10xgenomics.com/analysis-guides/tutorial-navigating-10x-barcoded-bam-files
 
 ![Finding edits in single cells](images/only_5_cells_test_example.png)
+
+### Tabulating coverage and edits and only a selected set of positions
+The code below will find all edited sites, and then generate h5ad adata-formatted objects containing all edit and read counts at all edited sites across all cells. Run on 32 cores, it takes about 6 minutes to complete.
+```
+python marine.py \
+--bam_filepath examples/data/single_cell_CT.md.subset.bam \
+--output_folder examples/sc_subset_CT \
+--barcode_whitelist_file examples/data/sc_barcodes.tsv.gz \
+--barcode_tag "CB" \
+--strandedness 2 \
+--all_cells_coverage # This flag will generate barcode x position coverage matrices (found in final_matrix_outputs folder)
+```
+
+### Outputs from script above:
+
+* final_filtered_site_info.tsv
+
+  | site_id                                  | barcode                | contig | position | ref | alt | strand | count | coverage | conversion | strand_conversion |
+  |------------------------------------------|------------------------|--------|----------|-----|-----|--------|-------|----------|------------|-------------------|
+  | AACCACATCGGAGATG-1_5_8144069_T_C_-         | AACCACATCGGAGATG-1      | 5      | 8144069  | T   | C   | -      | 1     | 1        | T>C        | A>G               |
+  | AAACCCATCGGATAAA-1_2_180036956_C_A_-       | AAACCCATCGGATAAA-1      | 2      | 180036956| C   | A   | -      | 1     | 1        | C>A        | G>T               |
+  | AACCAACTCGATGGAG-1_11_100581252_T_A_+       | AACCAACTCGATGGAG-1      | 11     | 100581252| T   | A   | +      | 1     | 1        | T>A        | T>A               |
+  | AAACGAAGTGATGTAA-1_7_25327815_C_A_+         | AAACGAAGTGATGTAA-1      | 7      | 25327815 | C   | A   | +      | 1     | 1        | C>A        | C>A               |
+  | AAACGCTCAGTAGGAC-1_14_18268103_G_A_-        | AAACGCTCAGTAGGAC-1      | 14     | 18268103 | G   | A   | -      | 1     | 1        | G>A        | C>T               |
+  
+  <i>Each row in this .tsv file represents an edited position within one cell, and contains:
+    * a unique site_id for that edit site
+    * barcode for the cell in which that edit site was identified
+    * contig, position, ref and alt allele information for the edit (as found on the forward strand)
+    * strand
+    * number of reads for which this position was edited ("count") and number of total reads at this position ("coverage")
+    * conversion as found on the forward strand, and conversion as viewed on the actual strand for the edit (i.e. a T>C edit on the - strand is actually an A>G edit)</i>
+
+* final_matrix_outputs/comprehensive_coverage_matrix.h5ad
+  * <i> An h5ad-formatted adata object containing coverage information at each edited site in each cell, in sparse format </i>
+
+
+* final_matrix_outputs/comprehensive_REF_ALT_edits_matrix.h5ad
+  * <i> An h5ad-formatted adata object containing edit information at each edited site in each cell, for each ref>alt edit type found at edited sites, in sparse format </i>
+
+### More efficient approach, if you have identified target positions: tabulating coverage and edits at only a selected set of positions
+The code below will instead identify generate coverage information across all cells at all positions listed in the specified tabulation bed. Edit information will also be generated across all cells at all positions listed in the specified tabulation bed. 
+
 
 ```
 python marine.py \
@@ -151,13 +196,15 @@ python marine.py \
 --barcode_whitelist_file examples/data/sc_barcodes.tsv.gz \
 --barcode_tag "CB" \
 --strandedness 2 \
---all_cells_coverage # This flag will generate barcode x position coverage matrices.
+--all_cells_coverage \
+--tabulation_bed examples/data/sc_selected_sites.bed # This file contains two at least two columns, contig and position (as found in the final_filtered_site_info.tsv file)
 ```
+<i> Note: If you use the --keep_all_intermediate files flag, then you can run over and over with different tabulation bed files, without having to rerun the first part of the program, saving a lot of time. This is because when preserving intermeidate files in the split_bam folder, the rate-limiting .bam splitting step then doesn't have to be rerun. </i>
 
-A recommended workflow for single-cell:
-* Run MARINE without the --all_cells_coverage flag set
-* Filter resulting edit sites down to a set you want to proceed with
-* Only run --all_cells_coverage in tandem with --tabulation_bed, which is where you can specify which sites should have coverage calculated across all cells. Otherwise this bit could take a very long time.
+### A recommended workflow for single-cell:
+* Run MARINE without the --all_cells_coverage flag set, but with --keep_intermediate_files flag 
+* Filter resulting edit sites down to a set you want to proceed with, using whatever heuristics deemed applcable, such as SNP filters 
+* Rerun the same MARINE command as run previously, except now also add the flag --all_cells_coverage, as well as the flag --tabulation_bed pointing to a bed file containing sites of interest.
 
 # Single cell long read example
 
@@ -200,8 +247,23 @@ This is derived from an APOBEC1-fusion experiment, so we should also expect to s
 Likewise, using bulk_subset_AI.md.subset.bam, which derives from an experiment using an A to I editor, we
 should expect to see to see an enrichment for A>G (I is interpreted as a G) edits:
 
+### Outputs from script above:
+
+* final_filtered_site_info.tsv
+
+  | site_id                                  | barcode           | contig | position | ref | alt | strand | count | coverage | conversion | strand_conversion |
+  |------------------------------------------|-------------------|--------|----------|-----|-----|--------|-------|----------|------------|-------------------|
+  | AACCACATCGGAGATG-1_5_8144069_T_C_-         | no_barcode      | 5      | 8144069  | T   | C   | -      | 1     | 1        | T>C        | A>G               |
+  | AAACCCATCGGATAAA-1_2_180036956_C_A_-       | no_barcode      | 2      | 180036956| C   | A   | -      | 1     | 1        | C>A        | G>T               |
+  | AACCAACTCGATGGAG-1_11_100581252_T_A_+       | no_barcode      | 11     | 100581252| T   | A   | +      | 1     | 1        | T>A        | T>A               |
+  | AAACGAAGTGATGTAA-1_7_25327815_C_A_+         | no_barcode      | 7      | 25327815 | C   | A   | +      | 1     | 1        | C>A        | C>A               |
+  | AAACGCTCAGTAGGAC-1_14_18268103_G_A_-        | no_barcode      | 14     | 18268103 | G   | A   | -      | 1     | 1        | G>A        | C>T               |
+
+<i> Note: the output format is the same as for the single-cell approach, except that barcode is filled with the placeholder "no_barcode." </i>
 
 ![Bulk AI expected edit distribution](images/bulk_subset_AI_distribution.png)
+
+
 
 # Bulk paired end example
 ```
@@ -214,3 +276,4 @@ python marine.py \
 --strandedness 2 \
 --paired_end
 ```
+<i> Note: The only difference when including the --paired_end flag is that MARINE is read-end aware, and doesn't double-count reads at regions overlapped by the two paired ends of the same read. </i>

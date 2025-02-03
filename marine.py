@@ -27,7 +27,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'src/'
 from utils import make_folder, pretty_print, make_depth_command_script_single_cell, \
 concatenate_files, get_edits_with_coverage_df, zero_edit_found, delete_intermediate_files, \
 pivot_edits_to_sparse, print_marine_logo, convert_sites_to_sailor, convert_conversions_argument, \
-generate_bedgraphs, check_folder_is_empty_warn_if_not, print_all_cells_coverage_warning 
+generate_bedgraphs, check_folder_is_empty_warn_if_not, print_all_cells_coverage_warning, remove_file_if_exists
 
 from core import run_edit_identifier, run_bam_reconfiguration, run_edit_finding, \
 gather_edit_information_across_subcontigs, run_coverage_calculator, generate_site_level_information, \
@@ -36,53 +36,125 @@ generate_depths
 from annotate import annotate_sites, get_strand_specific_conversion 
 
 
-def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suffix):
+def get_unique_barcodes(bam_path):
+    # Use samtools to extract CB tags and get unique barcodes
+    command = (
+        f"samtools view {bam_path} | "  # View the BAM file
+        f"awk '{{for (i=12; i<=NF; i++) if ($i ~ /^CB:Z:/) print substr($i, 6)}}' | "  # Extract CB tags
+        f"sort | uniq"  # Sort and get unique barcodes
+    )
+    print(f"\t\t\t\tCommand:\n\t\t\t\t{command}")
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        raise RuntimeError(f"Error extracting barcodes: {result.stderr.strip()}")
+    
+    # Split the output into a list of barcodes
+    barcodes = result.stdout.strip().split("\n") if result.stdout.strip() else []
+    return barcodes
+
+
+def get_unique_barcodes_for_reads_in_bamfile(args):
+    """
+    Worker function to process a BAM file for a specific chromosome.
+    Args:
+        args (tuple): (chrom, prefix, suffix, bam_filepath, unique_positions)
+
+    Returns:
+        tuple: (unique_barcodes, unique_positions)
+    """
+    chrom, prefix, suffix, bam_filepath, unique_positions, output_folder, output_suffix = args
+    
+    print(f"\t\tProcessing BAM for ({prefix}, {suffix}) on chromosome {chrom}")
+    unique_barcodes = get_unique_barcodes(bam_filepath)
+    print(f"\t\t\t{prefix}_{suffix}: Unique positions: {len(unique_positions)}, Unique barcodes: {len(unique_barcodes)}")
+    
+    return unique_barcodes
+
+
+def get_suffix_pairs_from_bam_filepath(bam_filepaths):
+    """
+    Retrieve, given bam filepaths 9_A-1.bam, 9_G-1.bam, etc., a list of tuples representing prefix and suffix for each 
+    bam, and a dictionary mapping each tuple to the corresponding file, e.g.:
+        * [(9, A-1), (9, G-1)], {'9_A-1': 'path/t/9_A-1.bam', '9_G-1': 'path/to/9_G-1.bam'}
+
+    Args:
+        bam_filepaths (list): List of BAM filepaths to extract suffix pairs.
+    """
+    suffix_pairs = []
+    suffix_pair_to_bam_filepath = {}
+
+    for bam in bam_filepaths:
+        contig_prefix = os.path.basename(bam).split("_")[0]
+        barcode_suffix = os.path.basename(bam).split("_")[1].split(".")[0]
+        
+        suffix_pairs.append((contig_prefix, barcode_suffix))
+        suffix_pair_to_bam_filepath[f'{contig_prefix}_{barcode_suffix}'] = bam
+        
+    return suffix_pairs, suffix_pair_to_bam_filepath
+
+
+def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suffix, processes=4):
     """
     Prepares the chromosome-suffix combinations for multiprocessing.
-    For each edited position in a given barcode, we want to look at the coverage at that
-    position for that chromosome across all the other barcodes. 
+    For each position in a given barcode, we want to look at the coverage at that
+    position for that chromosome in reads across all other barcodes. 
     
     Args:
         df (pd.DataFrame): Filtered DataFrame containing edit data.
-        bam_filepaths (list): List of BAM filepaths to extract suffix pairs.
+        bam_filepaths (list): List of processed BAM files to incorporate
         output_folder (str): Path to the output folder for split BED files.
         output_suffix (str): Suffix for output files.
+        processes (int): Number of processes for multiprocessing.
 
     Returns:
         list: List of tuples for processing.
     """
+
     # Extract prefix and suffix from BAM filenames
-    suffix_pairs = [
-        (os.path.basename(bam).split("_")[0], os.path.basename(bam).split("_")[1].split(".")[0])
-        for bam in bam_filepaths
-    ]
+    suffix_pairs, suffix_pair_to_bam_filepath = get_suffix_pairs_from_bam_filepath(bam_filepaths)
     print(f"suffix_pairs is {suffix_pairs}")
     
-    # Unique chromosomes in the dataset
-    unique_chromosomes = df['contig'].unique()
+    # Prepare arguments for multiprocessing
+    barcode_finding_tasks = []
+    overall_barcodes_list = set()
+    overall_positions_list = set()
 
-    # Prepare combinations of chromosomes and suffix pairs
-    combinations = []
-    for chrom in unique_chromosomes:
+    # For each unique chromosomes in the dataset... i.e. 9. 
+    for chrom in  df['contig'].unique():
         print(f"\tChecking {chrom}...")
 
         chrom = str(chrom)
         df['contig'] = df['contig'].astype(str)
         df_for_chrom = df[df['contig'] == chrom]
+        # Get the positions only found in that chromosome and add them to our overall position list
         unique_positions = df_for_chrom.position.unique()
-        
-        for prefix, suffix in suffix_pairs:
-            
-            if prefix == chrom:
-                print(f"\t\tGenerating for ({prefix},{suffix})")                
-                df_for_prefix_suffix =  df_for_chrom[df_for_chrom['barcode'].str.endswith(suffix)]
-                unique_barcodes = df_for_prefix_suffix.barcode.unique()
-                
-                combinations.append((chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix))
-    
-                print(f"\t\t\t{prefix}_{suffix}: Unique positions: {len(unique_positions)}, Unique barcodes: {len(unique_barcodes)}")
-            
-    return combinations
+        overall_positions_list.update([f'{chrom}:{p}' for p in unique_positions])
+
+        chrom_filtered_suffix_pairs = [(prefix, suffix) for prefix, suffix in suffix_pairs if prefix == chrom]
+        for prefix, suffix in chrom_filtered_suffix_pairs:
+            # For all the bam files belonging to this chromosome, e.g. 9_A-1, or 9_G-1:
+            bam_filepath = suffix_pair_to_bam_filepath.get(f'{prefix}_{suffix}')
+            barcode_finding_tasks.append([chrom, prefix, suffix, bam_filepath, unique_positions, output_folder, output_suffix])
+
+    # Get unique barcodes contained in each bam, using a multiprocessing pool for maximal core usage efficiency
+    print(f"Starting multiprocessing to figure out unique barcodes per bam, with {processes} processes...")
+    with Pool(processes) as pool:
+        list_of_unique_barcodes_per_bam = pool.map(get_unique_barcodes_for_reads_in_bamfile, barcode_finding_tasks)
+
+    # Make new task list for next step
+    new_tasks = []
+    # Aggregate results -- change tasks list to have unique barcodes rather than bam filepath
+    for unique_barcodes, task in zip(list_of_unique_barcodes_per_bam, barcode_finding_tasks):        
+        overall_barcodes_list = overall_barcodes_list.union(set(unique_barcodes))  
+        # Originally the 4th elementin the task tuple was the bam filepath, but now that we have all the information 
+        # we need from it in the form of unique barcodes, we can simply use the list of unique barcodes here instead.
+        task[3] = unique_barcodes
+        new_tasks.append(task)
+
+    print(f"\nFound {len(overall_barcodes_list)} unique barcodes and {len(overall_positions_list)} unique positions.\n")
+    return new_tasks, sorted(overall_barcodes_list), sorted(overall_positions_list)
+
 
 def process_combination_for_split(args):
     """
@@ -93,8 +165,7 @@ def process_combination_for_split(args):
         args (tuple): Contains chromosome, prefix, suffix, positions, barcodes, 
                       output folder, and output suffix.
     """
-    chrom, prefix, suffix, unique_positions, unique_barcodes, output_folder, output_suffix = args
-
+    chrom, prefix, suffix, unique_barcodes, unique_positions, output_folder, output_suffix = args
     # Output file path
     output_file = os.path.join(output_folder, f"combined_{output_suffix}_{prefix}_{suffix}.bed")
 
@@ -103,12 +174,44 @@ def process_combination_for_split(args):
         for position in unique_positions:
             for barcode in unique_barcodes:
                 contig = f"{chrom}_{barcode}"  # Construct contig using chromosome and barcode
-                f.write(f"{contig}\t{position-1}\t{position}\n")
+                f.write(f"{contig}\t{int(position)-1}\t{int(position)}\n")
 
     print(f"\t\t\t>>> Processed {chrom}, {prefix}_{suffix} -> {output_file}")
+    
+
+def filter_sites_using_tabulation_bed(df, tabulation_bed):
+    """Filters edit positions based on a tabulation bed file.
+
+    Arguments:
+        * df - dataframe of final sites 
+        * tabulation_bed - file path to bed file containing all sites where coverage calculation is desired
+    Returns:
+        * tabulation_bed_df - represents all sites in the tabulation bed file
+        * tabulation_edits_df - represents all sites in the tabulation bed file that have at least one edit 
+        * unique_tabulation_bed_sites - represents deduplicated site list based on tabulation bed locations
+    """
+    df['contig_position'] = df['contig'].astype(str) + '_' + df['position'].astype(str)
+    
+    tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
+    tabulation_bed_df['contig'] = tabulation_bed_df['chrom']
+    tabulation_bed_df['position'] = tabulation_bed_df['start'] # This should be the value matching edit sites
+    tabulation_bed_df['contig_position'] = tabulation_bed_df['chrom'].astype(str) + '_' + tabulation_bed_df['position'].astype(str)
+
+    unique_tabulation_bed_sites = tabulation_bed_df.contig_position.unique()
+    print(f"\t{len(unique_tabulation_bed_sites)} unique positions in {tabulation_bed}...")
+    print(f"\tExample rows:\n{tabulation_bed_df.head()}\n")
+
+    positions_with_edits = set(df['contig_position'])
+    positions_to_keep = positions_with_edits.intersection(unique_tabulation_bed_sites)
+    
+    print(f"\t{len(positions_to_keep)} out of {len(unique_tabulation_bed_sites)} specified positions were found to have edits.")
+
+    tabulation_edits_df = df[df['contig_position'].isin(positions_to_keep)]
+    
+    return tabulation_bed_df, tabulation_edits_df, unique_tabulation_bed_sites
 
 
-def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tabulation_bed=None, processes=4, output_suffix="all_cells"):
+def generate_and_split_bed_files_for_all_positions(output_folder, bam_filepaths, tabulation_bed=None, processes=4, output_suffix="all_cells"):
     """
     Generates combined BED files for all edit sites and splits them into suffix-specific files.
 
@@ -122,43 +225,58 @@ def generate_and_split_bed_files_for_all_edits(output_folder, bam_filepaths, tab
     input_file = f"{output_folder}/final_filtered_site_info.tsv"
     df = pd.read_csv(input_file, sep="\t")
     print(f"\n{len(df)} positions in {input_file}...")
+    print(f"Example rows in {input_file}:\n{df.head(5)}")
+
     
-    # Filter by tabulation bed-specified positions
-    if tabulation_bed:
-        df['contig_position'] = df['contig'].astype(str) + '_' + df['position'].astype(str)
-        tabulation_bed_df = pd.read_csv(tabulation_bed, sep='\t', names=['chrom', 'start', 'end'])
-        tabulation_bed_df['contig_position'] = tabulation_bed_df['chrom'].astype(str) + '_' + tabulation_bed_df['start'].astype(str)
-        print(f"\t{len(tabulation_bed_df)} unique positions in {tabulation_bed}...")
-        print("\n\tExample rows: {}\n".format(tabulation_bed_df.head()))
-
-        valid_positions = set(df['contig_position'])
-        positions_to_keep = valid_positions.intersection(set(tabulation_bed_df.contig_position))
-        
-        print(f"\t{len(positions_to_keep)} out of {len(valid_positions)} specified positions in {tabulation_bed} are valid")
-        df = df[df['contig_position'].isin(positions_to_keep)]
-
-    # Pivot edit dataframe
-    print("Pivoting edits dataframe into sparse h5ad files...")
-    pivot_edits_to_sparse(df, output_folder)
-
     pretty_print('Splitting bedfile locations to enable efficient coverage calculation at all positions...',
                  style='.')
+    
     # Prepare combinations for multiprocessing
     split_bed_folder = f"{output_folder}/combined_{output_suffix}_split_by_suffix"
     os.makedirs(split_bed_folder, exist_ok=True)
-    
+
     # Cleanup existing .bed files in the output folder
     existing_bed_files = glob(os.path.join(split_bed_folder, "*.bed"))
     if existing_bed_files:
         print(f"Found {len(existing_bed_files)} existing .bed files. Removing...")
         for file in existing_bed_files:
-            os.remove(file)
+            remove_file_if_exists(file)
     print("Existing .bed files removed. Starting fresh.")
-    
-    combinations = prepare_combinations_for_split(df, bam_filepaths, f"{output_folder}/combined_{output_suffix}_split_by_suffix", output_suffix)
 
+    # Filter by tabulation bed-specified positions
+    if tabulation_bed:
+        # Pivot dataframe of edits only at specified tabulation sites
+        print("Pivoting tabulation-based edits dataframe into sparse h5ad files...")
+        coverage_calc_sites_bed_df, edits_to_make_pivot_df, unique_tabulation_bed_sites = filter_sites_using_tabulation_bed(df, tabulation_bed)
+    else:
+        # Pivot dataframe of edits at all edit sites
+        print("Pivoting all edits dataframe into sparse h5ad files...")
+        edits_to_make_pivot_df = df
+        coverage_calc_sites_bed_df = df
+
+    print('edits_to_make_pivot_df', len(edits_to_make_pivot_df))
+    
+    # Calculate coverage in all cells only at the positions specified in tabulation bed
+    combinations, overall_barcodes_list, overall_positions_list = prepare_combinations_for_split(
+        coverage_calc_sites_bed_df, 
+        bam_filepaths, 
+        split_bed_folder, 
+        output_suffix,
+        processes=processes
+    )
+
+    print("Pivoting edits dataframe into sparse h5ad files...")
+    pivot_edits_to_sparse(edits_to_make_pivot_df, output_folder, overall_barcodes_list, overall_positions_list)
+
+    if tabulation_bed:
+        try:
+            assert sorted([i.replace('_', ':') for i in unique_tabulation_bed_sites]) == overall_positions_list
+        except AssertionError as e:
+            print(f"AssertionError: Overall positions derived for coverage calculation is not equal to tabulation sites: {e}.\n {len(unique_tabulation_bed_sites)} in tabulation bed, {len(overall_positions_list)} derived positions")
+            raise  # Properly re-raise the exception
+            
     # Run the processing with multiprocessing
-    with Pool(processes=processes) as pool:
+    with Pool(processes=cores) as pool:
         pool.map(process_combination_for_split, combinations)
 
     print(f"\nAll split BED files generated in {output_folder}/combined_{output_suffix}_split_by_suffix\n")
@@ -335,17 +453,21 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         pretty_print("Generating sparse matrices for all positions across all cells...", style="~")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        delete_intermediate_files(output_folder, contains='all_cells')
+        
         output_suffix = "all_cells"
     
         # Get the list of BAM file paths
         bam_filepaths = glob(f"{output_folder}/split_bams/*/*.bam")
     
         # Generate and split BED files using multiprocessing
-        generate_and_split_bed_files_for_all_edits(output_folder,
-                                                   bam_filepaths, 
-                                                   tabulation_bed=tabulation_bed,
-                                                   processes=cores, 
-                                                   output_suffix=output_suffix)
+        generate_and_split_bed_files_for_all_positions(
+            output_folder,
+            bam_filepaths, 
+            tabulation_bed=tabulation_bed,
+            output_suffix=output_suffix,
+            processes=cores
+        )
 
         make_depth_command_script_single_cell(
             paired_end,

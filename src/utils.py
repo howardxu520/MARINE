@@ -177,8 +177,6 @@ def split_bed_file(input_bed_file, output_folder, bam_filepaths, output_suffix='
     """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-
-    single_cell_approach = len(bam_filepaths) > 0
     
     suffix_pairs = [
         (os.path.basename(bam).split("_")[0], 
@@ -249,24 +247,26 @@ def get_broken_up_contigs(contigs, num_per_sublist):
     return broken_up_contigs
 
 
-def pivot_edits_to_sparse(df, output_folder):
+def pivot_edits_to_sparse(df, output_folder, overall_barcodes_list, overall_positions_list):
     """
     Convert a dense dataframe of edit information into a sparse matrix and save it as an AnnData object.
 
     Args:
         df (pd.DataFrame): Dataframe containing edit information with columns 'contig', 'position', 'barcode', and 'count'.
         output_folder (str): Path to the output folder for saving results.
+        overall_barcodes_list (list): Complete list of barcodes to include in the matrix.
+        overall_positions_list (list): Complete list of genomic positions to include in the matrix.
 
     Process:
         - Combine 'contig' and 'position' into a single column.
         - Filter data by strand conversion type.
+        - Ensure all barcodes and positions are included in the pivot table.
         - Pivot data to create a matrix with rows as genomic positions and columns as barcodes.
         - Convert the matrix to a sparse format and save as .h5ad.
 
     Saves:
         - Sparse matrix files in AnnData format (.h5ad) in the 'final_matrix_outputs' directory.
     """
-    
     # Create a new column for contig:position
     df["CombinedPosition"] = df["contig"].astype(str) + ":" + df["position"].astype(str)
 
@@ -275,19 +275,23 @@ def pivot_edits_to_sparse(df, output_folder):
     os.makedirs(final_output_dir, exist_ok=True)
 
     print(f"Saving edit sparse matrices to {final_output_dir}")
-    
+
     for strand_conversion in df.strand_conversion.unique():
         print(f"\tProcessing strand_conversion: {strand_conversion}")
 
-        # Pivot the dataframe
-        pivoted_df = df[df.strand_conversion == strand_conversion].pivot(
-            index="CombinedPosition", 
-            columns="barcode", 
+        # Filter the dataframe for the current strand_conversion
+        df_for_strand_conversion = df[df.strand_conversion == strand_conversion]
+        print(f"\t\t{len(df_for_strand_conversion)} edits for {strand_conversion}")
+
+        # Pivot the dataframe        
+        pivoted_df = df_for_strand_conversion.pivot(
+            index="CombinedPosition",
+            columns="barcode",
             values="count"
         )
 
-        # Replace NaN with 0 for missing values
-        pivoted_df = pivoted_df.fillna(0)
+        # Reindex the pivot table to include all positions and barcodes
+        pivoted_df = pivoted_df.reindex(index=overall_positions_list, columns=overall_barcodes_list, fill_value=0)
 
         # Convert to a sparse matrix
         sparse_matrix = csr_matrix(pivoted_df.values.T)
@@ -295,19 +299,15 @@ def pivot_edits_to_sparse(df, output_folder):
         # Create an AnnData object
         adata = ad.AnnData(
             X=sparse_matrix,
-            obs=pd.DataFrame(index=pivoted_df.columns),  # Row (site) metadata
-            var=pd.DataFrame(index=pivoted_df.index)  # Column (barcode) metadata
+            obs=pd.DataFrame(index=pivoted_df.columns),  # Row (barcode) metadata
+            var=pd.DataFrame(index=pivoted_df.index)  # Column (position) metadata
         )
 
         # Save the AnnData object
         output_file_name = f"comprehensive_{strand_conversion.replace('>', '_')}_edits_matrix.h5ad"
-        output_file = os.path.join(
-            final_output_dir,
-            output_file_name
-        )
+        output_file = os.path.join(final_output_dir, output_file_name)
         adata.write(output_file)
-        print(f"\t\tSaved sparse matrix for {strand_conversion} to {output_file_name}")
-
+        print(f"\t\tSaved sparse matrix ({adata.shape}) for {strand_conversion} to {output_file_name}")
 
 def make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
     
@@ -475,19 +475,23 @@ def write_read_to_bam_file(read, bam_handles_for_barcodes, barcode_bam_file_path
         bam_handles_for_barcodes[barcode_bam_file_path] = bam_for_barcode
 
     bam_for_barcode.write(read)
-    
+
 def remove_file_if_exists(file_path):
-    if os.path.exists(file_path):
-        #print("{} exists... deleting".format(file_path))
-        os.remove(file_path)
-        
+    if os.path.exists(file_path):  # Check if the path exists
+        try:
+            if os.path.isdir(file_path):  # If it's a directory, remove it with shutil.rmtree
+                shutil.rmtree(file_path)
+            else:  # If it's a file, use os.remove
+                os.remove(file_path)
+        except Exception as e:
+            print(f"Error while deleting {file_path}: {e}")
+
 def make_folder(folder_path):
     if not os.path.exists(folder_path):
         try:
             os.mkdir(folder_path)
         except Exception as e:
             pass
-            #sys.stderr.write('{}_{}\n'.format(folder_path, e))
 
 def only_keep_positions_for_region(contig, output_folder, positions_for_barcode, verbose=False):
     contig_index = str(contig.split("_")[-1]).zfill(3)
@@ -986,7 +990,7 @@ def merge_files_by_chromosome(args):
         [f"<(cut -f2- {file})" for file in other_files]
     )
     paste_command = f"paste {first_file} {strip_headers_command} > {merged_file}"
-
+    print(f"\n\tMerge command: bash -c '{paste_command}'") 
     # Use bash to execute the paste command
     run_command(f"bash -c '{paste_command}'")
     print(f"\tColumnar merge complete for {chromosome}. Output saved to {merged_file}.")
@@ -1117,7 +1121,6 @@ def combine_coverage_adatas(adata_dict):
     combined_adata = sum_adata_cellwise(aligned_adatas)
     
     assert(combined_adata.shape == (len(all_obs), len(all_pos)))
-    print("Shape of combined adata is {}".format(combined_adata.shape))
     return combined_adata
 
 
@@ -1157,8 +1160,8 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
 
     # Delete the .tsv versions of the coverage matrices 
     for f in glob(f'{output_folder}/*comprehensive_coverage_matrix.tsv'):
-        os.remove(f)
-    
+        remove_file_if_exists(f)
+        
     # Move the per-contig coverage matrices h5ad files into a subfolder to keep the output area clean
     os.makedirs(f"{output_folder}/per_contig_coverage_matrices", exist_ok=True)
     
@@ -1171,6 +1174,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
         shutil.move(h5_filepath, f"{output_folder}/per_contig_coverage_matrices/{h5_filepath.split('/')[-1]}")
             
     combined_adata = combine_coverage_adatas(adata_dict)
+    print(f"\tShape of combined comprehensive coverage adata is {combined_adata.shape}")
     combined_adata.write_h5ad(f"{output_folder}/comprehensive_coverage_matrix.h5ad")
 
 
@@ -1183,9 +1187,17 @@ def merge_depth_files(output_folder, output_suffix=''):
         
     depth_files = f"{output_folder}/coverage/depths_{output_suffix}*.txt"
     merged_depth_file = f"{output_folder}/depths_{output_suffix}.txt"
-    run_command(f"cat {depth_files} > {merged_depth_file}")
+    cat_command = f"cat {depth_files} > {merged_depth_file}"
+    print(f"\tcat command: {cat_command}")
+    run_command(cat_command)
     print(f"Depths merged into {merged_depth_file}.")
 
+
+def format_time(seconds):
+    """Convert seconds into HH:MM:SS.ssssss format with correct fractional seconds."""
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours):02}:{int(minutes):02}:{seconds:06.3f}"  # Keep fractional seconds
 
 
 def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matrix_folder):
@@ -1194,9 +1206,7 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
     """
 
     depths_file = output_filepath
-    
-    print(f"\tRunning samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}\n")
-    
+        
     regions = []
     with open(bed_filepath, "r") as bed:
         for line in bed:
@@ -1204,8 +1214,11 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
             chrom, start, end = fields[0], int(fields[1]), int(fields[2])
             regions.append((chrom, start, end))
 
+    start_time = time.perf_counter()  # High-precision start time
+
     if len(regions) > 0:
-        print(f"\t{bed_filepath.split('/')[-1]}: {len(regions)} regions")
+        print(f"\tRunning samtools view on {bed_filepath} for {bam_filepath}, outputting to {output_filepath}\n")
+        print(f"\t-> {bed_filepath.split('/')[-1]}: {len(regions)} regions\n")
         
         with pysam.AlignmentFile(bam_filepath, "rb") as bam, open(depths_file, "w") as out:
             try:
@@ -1225,13 +1238,19 @@ def calculate_coverage(bam_filepath, bed_filepath, output_filepath, output_matri
                         f"Error processing bam {bam_filepath} using bed {bed_filepath} at {chrom}:{start}-{end}, "
                         f"outputting to {depths_file}: {e}"
                     )
-                    
+
+        elapsed_time = time.perf_counter() - start_time  # Calculate high-precision elapsed time
+        print(f"\t\tDone outputting depths to {os.path.basename(output_filepath)} (time: {format_time(elapsed_time)})...")
+        
         if output_matrix_folder:
             matrix_output_file = os.path.join(output_matrix_folder, f"{os.path.basename(depths_file).split('.')[0]}_matrix.tsv")
         
             if not os.path.exists(matrix_output_file) or os.path.getsize(matrix_output_file) == 0:
                 # Pivot the depths output file into a matrix
                 pivot_depths_output(depths_file, matrix_output_file)
+                
+            total_elapsed_time = time.perf_counter() - start_time  # Update time after matrix output
+            print(f"\t\t\tDone outputting pivoted depths to {os.path.basename(matrix_output_file)} (total time: {format_time(total_elapsed_time)})...\n")
 
 
 def run_pysam_count_coverage(args_list, processes):
@@ -1319,6 +1338,7 @@ def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_fold
         pretty_print("\nCalculating depths using multiprocessing with pysam...", style='.')
         run_pysam_count_coverage(pysam_coverage_args, processes)
 
+        pretty_print("\nFinished calculating depths, now merging output depth files...", style='.')
         merge_depth_files(output_folder, output_suffix)
 
         if pivot:
@@ -1326,7 +1346,7 @@ def make_depth_command_script_single_cell(paired_end, bam_filepaths, output_fold
             final_combined_matrices_folder = f"{output_folder}/final_matrix_outputs"
             os.makedirs(final_combined_matrices_folder, exist_ok=True)
         
-            print("\nRunning pivot...\n")
+            pretty_print("\nRunning pivot...", style='.')
             prepare_matrix_files_multiprocess(
                 output_matrix_folder, 
                 final_combined_matrices_folder,
@@ -1491,7 +1511,8 @@ def zero_edit_found(final_site_level_information_df, output_folder, sailor_list,
     return 'Done'
 
 
-def delete_intermediate_files(output_folder):
+def delete_intermediate_files(output_folder, contains=None):
+    
     to_delete = ['coverage', 'edit_info', 'split_bams', 'combined_all_cells_split_by_suffix',
                  'combined_source_cells_split_by_suffix',
                  'matrix_outputs',
@@ -1499,13 +1520,17 @@ def delete_intermediate_files(output_folder):
                  'concat_command.sh', 'depth_commands_source_cells.sh', 'depth_commands_source_cells.txt', 'combined.bed', 'merge_command.sh',
                  'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
                  'depths_source_cells.txt', 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv',
-                 'combined_all_cells.bed', 'depth_commands_all_cells.sh', 'depth_commands_all_cells.txt', 'depths_all_cells.txt', 'combined_source_cells.bed'
+                 'combined_all_cells.bed', 'depth_commands_all_cells.sh', 'depth_commands_all_cells.txt', 'depths_all_cells.txt', 'combined_source_cells.bed',
+                 'final_matrix_outputs/per_contig_coverage_matrices'
                 ]
+    
     for object in to_delete:
+
+        if contains is not None:
+            if contains not in object:
+                continue
+
         object_path = '{}/{}'.format(output_folder, object)
 
-        if os.path.exists(object_path):
-            if os.path.isfile(object_path):
-                os.remove(object_path)
-            else:
-                shutil.rmtree(object_path)
+        sys.stdout.write(f"~~~~ WARNING: Removing existing object\n{object_path}\n")
+        remove_file_if_exists(object_path)
