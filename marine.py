@@ -94,7 +94,7 @@ def get_suffix_pairs_from_bam_filepath(bam_filepaths):
     return suffix_pairs, suffix_pair_to_bam_filepath
 
 
-def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suffix, n_processes=4):
+def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suffix, processes=4):
     """
     Prepares the chromosome-suffix combinations for multiprocessing.
     For each position in a given barcode, we want to look at the coverage at that
@@ -105,7 +105,7 @@ def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suff
         bam_filepaths (list): List of processed BAM files to incorporate
         output_folder (str): Path to the output folder for split BED files.
         output_suffix (str): Suffix for output files.
-        n_processes (int): Number of processes for multiprocessing.
+        processes (int): Number of processes for multiprocessing.
 
     Returns:
         list: List of tuples for processing.
@@ -138,8 +138,8 @@ def prepare_combinations_for_split(df, bam_filepaths, output_folder, output_suff
             barcode_finding_tasks.append([chrom, prefix, suffix, bam_filepath, unique_positions, output_folder, output_suffix])
 
     # Get unique barcodes contained in each bam, using a multiprocessing pool for maximal core usage efficiency
-    print(f"Starting multiprocessing to figure out unique barcodes per bam, with {n_processes} processes...")
-    with Pool(n_processes) as pool:
+    print(f"Starting multiprocessing to figure out unique barcodes per bam, with {processes} processes...")
+    with Pool(processes) as pool:
         list_of_unique_barcodes_per_bam = pool.map(get_unique_barcodes_for_reads_in_bamfile, barcode_finding_tasks)
 
     # Make new task list for next step
@@ -261,7 +261,8 @@ def generate_and_split_bed_files_for_all_positions(output_folder, bam_filepaths,
         coverage_calc_sites_bed_df, 
         bam_filepaths, 
         split_bed_folder, 
-        output_suffix
+        output_suffix,
+        processes=processes
     )
 
     print("Pivoting edits dataframe into sparse h5ad files...")
@@ -275,7 +276,7 @@ def generate_and_split_bed_files_for_all_positions(output_folder, bam_filepaths,
             raise  # Properly re-raise the exception
             
     # Run the processing with multiprocessing
-    with Pool(processes=processes) as pool:
+    with Pool(processes=cores) as pool:
         pool.map(process_combination_for_split, combinations)
 
     print(f"\nAll split BED files generated in {output_folder}/combined_{output_suffix}_split_by_suffix\n")
@@ -464,8 +465,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
             output_folder,
             bam_filepaths, 
             tabulation_bed=tabulation_bed,
-            processes=cores, 
-            output_suffix=output_suffix
+            output_suffix=output_suffix,
+            processes=cores
         )
 
         make_depth_command_script_single_cell(

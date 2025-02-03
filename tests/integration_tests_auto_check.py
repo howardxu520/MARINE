@@ -366,13 +366,6 @@ except Exception as e:
     print("\n\t ~~~ single cell vs bulk modes on sc dataset equivalency test FAILED! ~~~\n")
     failures += 1
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#     Check that the coverage and edit matrices are correct
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
-print("Checking that the position X barcode coverage and edit h5ad sparse matrices are correct and contain the same information as the flat tsv final sites.")
-
-test_folder = 'singlecell_tests/only_5_cells_all_cells_coverage_test/'
 
 def get_all_edited_positions_and_barcodes(test_folder):
     name_to_obs = {}
@@ -422,7 +415,16 @@ final_filtered_site_info['contig'].astype(str) + ':' + final_filtered_site_info[
     
     return edited_pos, covered_pos, edited_obs, covered_obs, \
     final_filtered_site_info, name_to_pos, name_to_obs, name_to_adata
-    
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#     Check that the coverage and edit matrices are correct
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+print("Checking that the position X barcode coverage and edit h5ad sparse matrices are correct and contain the same information as the flat tsv final sites.")
+
+test_folder = 'singlecell_tests/only_5_cells_all_cells_coverage_test/'
+
 edited_pos, covered_pos, edited_obs, covered_obs, final_filtered_site_info,\
 name_to_pos, name_to_obs, name_to_adata = get_all_edited_positions_and_barcodes(test_folder)
 
