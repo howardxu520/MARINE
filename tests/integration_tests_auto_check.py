@@ -372,23 +372,41 @@ except Exception as e:
     failures += 1
 
 
-def get_all_edited_positions_and_barcodes(test_folder):
+def get_all_edited_positions_and_barcodes_adatas(test_folder):
+    overall_coverage_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_coverage_matrix.h5ad"
+    overall_ct_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_C_T_edits_matrix.h5ad"
+    overall_ag_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_A_G_edits_matrix.h5ad"
+    overall_gc_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_G_C_edits_matrix.h5ad"
+    
+    # Load the AnnData object
+    coverage_adata = ad.read_h5ad(overall_coverage_matrix)
+    ct_edits_adata = ad.read_h5ad(overall_ct_edits_matrix)
+    ag_edits_adata = ad.read_h5ad(overall_ag_edits_matrix)
+    gc_edits_adata = ad.read_h5ad(overall_gc_edits_matrix)
+    
+    return coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata
+
+
+def get_all_positions_and_barcodes_in_adatas(test_folder):
     name_to_obs = {}
     name_to_pos = {}
     name_to_adata = {}
 
-    coverage_and_edit_matrices = sorted(glob('{}/final_matrix_outputs/per_contig_coverage_matrices/*.h5ad'.format(test_folder))) + sorted(glob('{}/final_matrix_outputs/*edits_matrix.h5ad'.format(test_folder)))
-    print('coverage_and_edit_matrices', len(coverage_and_edit_matrices))
+    coverage_and_edit_matrices = sorted(glob('{}/final_matrix_outputs/comprehensive_coverage_matrix.h5ad'.format(test_folder))) + sorted(glob('{}/final_matrix_outputs/*edits_matrix.h5ad'.format(test_folder)))
+    print('coverage_and_edit_matrices in {}'.format(test_folder),
+          len(coverage_and_edit_matrices))
+
+    total_edits_sum = 0
     
     for f in coverage_and_edit_matrices:
         filename = f.split('/')[-1].split('.h5ad')[0]
 
-        if filename.startswith('comprehensive') and not 'edits' in filename:
-            continue
-
         # Load the AnnData object
         adata = ad.read_h5ad(f)
-    
+
+        if 'edits' in filename:
+            total_edits_sum += pd.DataFrame(adata.X.todense()).sum().sum()
+            
         print(filename, '\n\t', adata)
 
         name_to_adata[filename] = adata
@@ -412,15 +430,14 @@ def get_all_edited_positions_and_barcodes(test_folder):
             covered_pos = covered_pos.union(v)
         else:
             edited_pos = edited_pos.union(v)
-
+            
     final_filtered_site_info = pd.read_csv(f'{test_folder}/final_filtered_site_info.tsv', sep='\t')
     final_filtered_site_info['CombinedPosition'] = \
 final_filtered_site_info['contig'].astype(str) + ':' + final_filtered_site_info['position'].astype(str)
 
     
     return edited_pos, covered_pos, edited_obs, covered_obs, \
-    final_filtered_site_info, name_to_pos, name_to_obs, name_to_adata
-
+    final_filtered_site_info, name_to_pos, name_to_obs, name_to_adata, total_edits_sum
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #     Check that the coverage and edit matrices are correct
@@ -428,128 +445,145 @@ final_filtered_site_info['contig'].astype(str) + ':' + final_filtered_site_info[
 print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
 print("Checking that the position X barcode coverage and edit h5ad sparse matrices are correct and contain the same information as the flat tsv final sites.")
 
-test_folder = 'singlecell_tests/only_5_cells_all_cells_coverage_test/'
 
-edited_pos, covered_pos, edited_obs, covered_obs, final_filtered_site_info,\
-name_to_pos, name_to_obs, name_to_adata = get_all_edited_positions_and_barcodes(test_folder)
+adata_outputs_to_check = {
+    'only_5_cells_all_coverage_with_extra_tabulated_sites_adata_test': {
+        'test_folder': 'singlecell_tests/only_5_cells_all_cells_coverage_test/',
+        'positions_in_adata': 53,
+        'barcodes_in_adata': 5,
+        'total_edits_sum': 99
+    },
+    'only_5_cells_all_coverage_all_edited_sites_adata_test': {
+        'test_folder': 'singlecell_tests/only_5_cells_all_cells_coverage_no_tabulation_test/',
+        'positions_in_adata': 51,
+        'barcodes_in_adata': 5,
+        'total_edits_sum': 99
+    },
+    'only_4_cells_all_coverage_with_extra_tabulated_sites_adata_test': {
+        'test_folder': 'singlecell_tests/only_4_cells_all_cells_coverage_test/',
+        'positions_in_adata': 53,
+        'barcodes_in_adata': 4,
+        'total_edits_sum': 89
+    }
+}
 
-print('Checking that all tabulation bed positions are found in the sparse matrices')
-try:
-    assert(53 == len(edited_pos))
-    print("\n\t >>> Passed!")
-except Exception as e:
-    print(e)
-    print(f'Exception: edited_pos is {len(edited_pos)} instead of expected 53')
-    failures += 1
+for test_name, test_values_dict in adata_outputs_to_check.items():
+    print(f"\n===================================================================================================\
+    \nRunning adata checks for\
+    {test_name}\n===================================================================================================\n")
+    expected_var = adata_outputs_to_check.get(test_name).get('positions_in_adata')
+    expected_obs = adata_outputs_to_check.get(test_name).get('barcodes_in_adata')
+    expected_total_edits_sum = adata_outputs_to_check.get(test_name).get('total_edits_sum')
+    test_folder = adata_outputs_to_check.get(test_name).get('test_folder')
     
-print('Checking that final_filtered_site_info.tsv set of barcodes is same as in sparse matrices')
-try:
-    assert(set(final_filtered_site_info.barcode) == edited_obs)
-    print("\n\t >>> Passed!")
-except Exception as e:
-    print("Exception: final_filtered_site_info.tsv set of barcodes is not same as in sparse matrices")
-    print(e)
-    failures += 1
-
-
-print('edited barcodes: {}'.format(len(edited_obs)))
-print('covered barcodes: {}'.format(len(covered_obs)))
-try:
-    assert(edited_obs == covered_obs)
-    print("\n\t >>> coverage matrix / edit matrix barcode comparison passed! <<<\n")
-
-except Exception as e:
-    print("Exception: Edited barcodes are not same as covered barcodes")
-    print(e)
-    failures += 1
-
-print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
     
-print('edited positions: {}'.format(len(edited_pos)))
-print('covered positions: {}'.format(len(covered_pos)))
-try:
-    assert(edited_pos == covered_pos)
-    print("\n\t >>> coverage matrix / edit matrix position comparison passed! <<<\n")
-except Exception as e:
-    print("Exception: Edited positions are not same as covered positions")
-    print(e)
-    failures += 1
-
-# Execute test
-def get_all_edited_positions_and_barcodes_adatas(test_folder):
-    overall_coverage_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_coverage_matrix.h5ad"
-    overall_ct_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_C_T_edits_matrix.h5ad"
-    overall_ag_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_A_G_edits_matrix.h5ad"
-    overall_gc_edits_matrix = f"{test_folder}/final_matrix_outputs/comprehensive_G_C_edits_matrix.h5ad"
+    edited_pos, covered_pos, edited_obs, covered_obs, final_filtered_site_info,\
+    name_to_pos, name_to_obs, name_to_adata, total_edits_sum = get_all_positions_and_barcodes_in_adatas(test_folder)
     
-    # Load the AnnData object
-    coverage_adata = ad.read_h5ad(overall_coverage_matrix)
-    ct_edits_adata = ad.read_h5ad(overall_ct_edits_matrix)
-    ag_edits_adata = ad.read_h5ad(overall_ag_edits_matrix)
-    gc_edits_adata = ad.read_h5ad(overall_gc_edits_matrix)
     
-    return coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata
-
-print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
-
-coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes_adatas(test_folder)
-
-print('gc_edits_adata: {}'.format(len(gc_edits_adata)))
-print('ag_edits_adata: {}'.format(len(ag_edits_adata)))
-print('ct_edits_adata: {}'.format(len(ct_edits_adata)))
-
-try:
-    print('ct_edits_adata', pd.DataFrame(ct_edits_adata.X.todense(),
-                                         index=ct_edits_adata.obs.index, 
-                                         columns=ct_edits_adata.var.index), '\n')
+    print('Checking that all tabulation bed positions are found in the sparse matrices')
+    try:
+        assert(expected_var == len(edited_pos))
+        print("\n\t >>> Passed!")
+    except Exception as e:
+        print(e)
+        print(f'Exception: edited positions is {len(edited_pos)} instead of expected {expected_var}')
+        failures += 1
+        
+    print('Checking that final_filtered_site_info.tsv set of barcodes is same as in sparse matrices')
+    try:
+        assert(expected_obs == len(edited_obs))
+        print("\n\t >>> Passed!")
+    except Exception as e:
+        print(f"Exception: edited barcodes is {len(edited_obs)} instead of expected {expected_obs}')")
+        print(e)
+        failures += 1
     
-    print('ag_edits_adata', pd.DataFrame(ag_edits_adata.X.todense(),
-                                         index=ag_edits_adata.obs.index, 
-                                         columns=ag_edits_adata.var.index), '\n')
-
-    print('gc_edits_adata', pd.DataFrame(gc_edits_adata.X.todense(),
-                                         index=gc_edits_adata.obs.index, 
-                                         columns=gc_edits_adata.var.index), '\n')
     
-    print('coverage_adata', pd.DataFrame(coverage_adata.X.todense(),
-                                         index=coverage_adata.obs.index, 
-                                         columns=coverage_adata.var.index)[['9:3000508', '9:3000527', '9:3000528']], '\n')
-          
-    print('\t', ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense())
-    print('\t', coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense())
+    print('edited barcodes: {}'.format(len(edited_obs)))
+    print('covered barcodes: {}'.format(len(covered_obs)))
+    try:
+        assert(edited_obs == covered_obs)
+        print("\n\t >>> coverage matrix / edit matrix barcode comparison passed! <<<\n")
     
-    assert(ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 1)
-    assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 12)
-    print("\t\t9:3000528 passed...")
+    except Exception as e:
+        print("Exception: Edited barcodes are not same as covered barcodes")
+        print(e)
+        failures += 1
 
-    print('\t', ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense())
-    print('\t', coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense())
+    print('Checking that the total sum of all edits in the adata object is as expected ({})'.format(
+        final_filtered_site_info['count'].sum()
+    ))
+    try:
+        assert(total_edits_sum == expected_total_edits_sum == final_filtered_site_info['count'].sum())
+    except Exception as e:
+        print(f"Exception: total edit sum {total_edits_sum} is not same as expected edit sum {expected_total_edits_sum}")
+        print(e)
+        failures += 1
+        
+    print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+        
+    print('edited positions: {}'.format(len(edited_pos)))
+    print('covered positions: {}'.format(len(covered_pos)))
+    try:
+        assert(edited_pos == covered_pos)
+        print("\n\t >>> coverage matrix / edit matrix position comparison passed! <<<\n")
+    except Exception as e:
+        print("Exception: Edited positions are not same as covered positions")
+        print(e)
+        failures += 1
     
-    assert(ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 1)
-    assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 3)
-    print("\t\t9:3000508 passed...")
-
-    print('\t', ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense())
-    print('\t', coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense())
+    # Execute test
+    print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
     
-    assert(ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 10)
-    assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 12)
-    print("\t\t9:3000527 passed...")
-
-    print('\t', gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense())
-    print('\t', coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense())
+    coverage_adata, ct_edits_adata, ag_edits_adata, gc_edits_adata = get_all_edited_positions_and_barcodes_adatas(test_folder)
     
-    assert(gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense()== 1)
-    assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 4)
-    print("\t\t9:3000525 passed...")
-
-    print("\n\t >>> coverage matrix and edit matrix values confirmation passed! <<<\n")
-
-except Exception as e:
-    print('Error', e)
-    print("Exception: Expected edit and coverage values not found in sparse matrices")
-    failures += 1
-    raise(e)
+    print('gc_edits_adata: {}'.format(len(gc_edits_adata)))
+    print('ag_edits_adata: {}'.format(len(ag_edits_adata)))
+    print('ct_edits_adata: {}'.format(len(ct_edits_adata)))
+    
+    try:
+        """
+        print('ct_edits_adata', pd.DataFrame(ct_edits_adata.X.todense(),
+                                             index=ct_edits_adata.obs.index, 
+                                             columns=ct_edits_adata.var.index), '\n')
+        
+        print('ag_edits_adata', pd.DataFrame(ag_edits_adata.X.todense(),
+                                             index=ag_edits_adata.obs.index, 
+                                             columns=ag_edits_adata.var.index), '\n')
+    
+        print('gc_edits_adata', pd.DataFrame(gc_edits_adata.X.todense(),
+                                             index=gc_edits_adata.obs.index, 
+                                             columns=gc_edits_adata.var.index), '\n')
+        
+        print('coverage_adata', pd.DataFrame(coverage_adata.X.todense(),
+                                             index=coverage_adata.obs.index, 
+                                             columns=coverage_adata.var.index)[['9:3000508', '9:3000527', '9:3000528']], '\n')
+        """  
+        
+        assert(ct_edits_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 1)
+        assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000528'].X.todense() == 12)
+        print("\t\t9:3000528 passed...")
+    
+        assert(ct_edits_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 1)
+        assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000508'].X.todense() == 3)
+        print("\t\t9:3000508 passed...")
+    
+        assert(ag_edits_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 10)
+        assert(coverage_adata['GGGACCTTCGAGCCAC-1','9:3000527'].X.todense() == 12)
+        print("\t\t9:3000527 passed...")
+        
+        assert(gc_edits_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense()== 1)
+        assert(coverage_adata['GATCCCTCAGTAACGG-1','9:3000525'].X.todense() == 4)
+        print("\t\t9:3000525 passed...")
+    
+        print("\n\t >>> coverage matrix and edit matrix values confirmation passed! <<<\n")
+    
+    except Exception as e:
+        print('Error', e)
+        print("Exception: Expected edit and coverage values not found in sparse matrices")
+        failures += 1
+        raise(e)
     
 
 print("There were {} failures".format(failures))

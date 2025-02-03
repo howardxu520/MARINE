@@ -1160,8 +1160,7 @@ def prepare_matrix_files_multiprocess(output_matrix_folder,
 
     # Delete the .tsv versions of the coverage matrices 
     for f in glob(f'{output_folder}/*comprehensive_coverage_matrix.tsv'):
-        #remove_file_if_exists(f)
-        pass
+        remove_file_if_exists(f)
         
     # Move the per-contig coverage matrices h5ad files into a subfolder to keep the output area clean
     os.makedirs(f"{output_folder}/per_contig_coverage_matrices", exist_ok=True)
@@ -1521,7 +1520,8 @@ def delete_intermediate_files(output_folder, contains=None):
                  'concat_command.sh', 'depth_commands_source_cells.sh', 'depth_commands_source_cells.txt', 'combined.bed', 'merge_command.sh',
                  'final_edit_info_no_coverage.tsv', 'final_edit_info_no_coverage_sorted.tsv',
                  'depths_source_cells.txt', 'depth_modified.tsv', 'final_edit_info.tsv', 'final_filtered_edit_info.tsv',
-                 'combined_all_cells.bed', 'depth_commands_all_cells.sh', 'depth_commands_all_cells.txt', 'depths_all_cells.txt', 'combined_source_cells.bed'
+                 'combined_all_cells.bed', 'depth_commands_all_cells.sh', 'depth_commands_all_cells.txt', 'depths_all_cells.txt', 'combined_source_cells.bed',
+                 'final_matrix_outputs/per_contig_coverage_matrices'
                 ]
     
     for object in to_delete:
