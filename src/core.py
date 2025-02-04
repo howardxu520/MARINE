@@ -339,7 +339,12 @@ def run_edit_finding(barcode_tag,
         for k, v in overall_counts_summary_df.items():
             f.write(f'{k}\t{v}\n') 
 
-        f.write(f'edits per read (EPR)\t{overall_counts_summary_df.get("total_edits")/overall_total_reads_processed}\n')
+        if overall_total_reads_processed > 0:
+            raw_epr = overall_counts_summary_df.get("total_edits")/overall_total_reads_processed
+        else:
+            raw_epr = 0
+            
+        f.write(f'edits per read (EPR)\t{raw_epr}\n')
 
 
 def incorporate_barcode(read_as_string, contig, barcode):
