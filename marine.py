@@ -584,7 +584,7 @@ if __name__ == '__main__':
     print_all_cells_coverage_warning(all_cells_coverage, tabulation_bed)
 
     bedgraphs_list = convert_conversions_argument(bedgraphs, barcode_tag, file_type='bedgraph')
-    sailor_list = convert_conversions_argument(bedgraphs, barcode_tag, file_type='sailor')
+    sailor_list = convert_conversions_argument(sailor, barcode_tag, file_type='sailor')
     
     assert(strandedness in [0, 1, 2])
 
