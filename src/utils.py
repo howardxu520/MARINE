@@ -1422,8 +1422,8 @@ def get_sailor_sites(final_site_level_information_df, conversion="C>T", skip_cov
     else:
         final_site_level_information_df['score'] = final_site_level_information_df.apply(calculate_sailor_score, axis=1)
 
-    final_site_level_information_df['start'] = final_site_level_information_df['position']
-    final_site_level_information_df['end'] = final_site_level_information_df['position'] + 1
+    final_site_level_information_df['start'] = final_site_level_information_df['position'] -1
+    final_site_level_information_df['end'] = final_site_level_information_df['position']
     
     final_site_level_information_df = final_site_level_information_df[['contig', 'start', 'end', 'score', 'combo', 'strand']]
     return final_site_level_information_df, weird_sites
