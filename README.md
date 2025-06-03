@@ -66,6 +66,7 @@ mamba create -n marine_environment python=3.10 -y
 mamba env update -n marine_environment --file marine_environment2.yaml
 conda activate marine_environment
 ```
+These approaches should typically take at most 5-10 minutes.
 
 # Notes:
 
