@@ -37,11 +37,11 @@ OS Requirements
 
 This package is supported for macOS and Linux. The package has been tested on the following systems:
 
-Linux: Ubuntu 16.04
+Linux: Ubuntu 24.04.2
 
 ## Python Dependencies
 
-MARINE uses Python >= 3.10, and all required dependencies can be installed using the conda or mamba commands described below.
+MARINE uses Python >= 3.8.18, and all required dependencies can be installed using the conda or mamba commands described below.
 
 # Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
@@ -58,7 +58,7 @@ conda env create  --file=marine_environment2.yaml
 conda activate marine_environment
 ```
 
-or if you encounter problems with this approach, try using mamba instead, which can be faster:
+or if you encounter problems with this approach, try using mamba (downloadable at https://github.com/conda-forge/miniforge) instead, which can be faster:
 
 ```
 conda install -c conda-forge mamba=1.5.12 -y
