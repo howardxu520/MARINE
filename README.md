@@ -41,7 +41,7 @@ Linux: Ubuntu 24.04.2
 
 ## Python Dependencies
 
-MARINE uses Python >= 3.8.18, and all required dependencies can be installed using the conda or mamba commands described below.
+MARINE uses Python >= 3.10, and all required dependencies can be installed using the conda or mamba commands described below.
 
 # Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
@@ -50,8 +50,8 @@ Simply git clone this repository using the link at the top right on the main rep
 git clone https://github.com/YeoLab/MARINE.git
 ```
 
-MARINE was developed and tested using Python 3.8.18 and is not guaranteed to work with earlier versions of Python.
-Use the provided .yml file to create a new conda environment that contains all required dependencies, including the proper Python version, for MARINE:
+MARINE was developed and tested using Python 3.10 and is not guaranteed to work with earlier versions of Python.
+Use the provided .yaml file (marine_environment2.yaml) to create a new conda environment that contains all required dependencies, including the proper Python version, for MARINE:
 
 ```
 conda env create  --file=marine_environment2.yaml
