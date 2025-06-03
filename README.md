@@ -2,6 +2,7 @@
 ------------------------------------------------------
 # Table of Contents
 - [Introduction](#introduction)
+- [System Requirements](#system-requirements)
 - [Installation](#installation)
 - [Notes](#notes)
 - [Command Parameters](#command-parameters)
@@ -23,6 +24,24 @@ Speed and memory profiles:
 
 Comparison to existing tools for bulk RNA-seq data:
 ![MARINE benchmarking](images/MARINE_benchmarks.jpg)
+
+# System Requirements 
+
+## Hardware requirements
+
+MARINE requires only a standard computer with enough RAM to support the in-memory operations.
+
+## Software requirements
+
+OS Requirements
+
+This package is supported for macOS and Linux. The package has been tested on the following systems:
+
+Linux: Ubuntu 16.04
+
+## Python Dependencies
+
+MARINE uses Python >= 3.10, and all required dependencies can be installed using the conda or mamba commands described below.
 
 # Installation
 Simply git clone this repository using the link at the top right on the main repository page. Should take at most a minute or two.
