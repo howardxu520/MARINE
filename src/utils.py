@@ -19,6 +19,7 @@ import anndata as ad
 import scanpy as sc
 from scipy.sparse import csr_matrix
 import scipy.sparse as sp
+import gzip
 
 # Number of barcode characters to use as suffix during splitting 
 CB_N = 1
@@ -771,6 +772,99 @@ def write_reads_to_file(reads, bam_file_name, header_string, barcode_tag="BC"):
     bam_handle.close()
         
            
+# def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4, verbose=False):
+#     job_params = []
+    
+#     # Sort the subcontig regions such that the reads are properly ordered 
+#     sorted_subcontig_names = sorted(df_dict.keys())
+#     sorted_subcontig_dfs = []
+#     for n in sorted_subcontig_names:
+#         subcontig = df_dict.get(n)
+#         if len(subcontig) > 0:
+#             sorted_subcontig_dfs.append(subcontig)
+        
+#     if len(sorted_subcontig_dfs) == 0:
+#         if verbose:
+#             print("{} was empty".format(contig))
+#         return []
+
+#     if verbose:
+#         print("\t{}: num subcontigs to concat: {}".format(contig, len(sorted_subcontig_dfs)))
+#         # All of the reads for all of the barcodes are in this dataframe
+#         print("\t{}: concatting".format(contig))
+        
+#     all_contents_df = pl.concat(sorted_subcontig_dfs)
+                
+#     # Combine the reads (in string representation) for all rows corresponding to a barcode  
+#     assert(barcode_tag in ['CB', 'IS', 'IB'])
+    
+#     suffix_options = suffixes.get(barcode_tag)
+#     print("\t{} suffixes".format(len(suffix_options)))
+    
+#     for suffix in suffix_options:
+#         # Make a sub-subfolder to put the bams for this specific contig
+#         contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
+#         if not os.path.exists(contig_folder):
+#             os.mkdir(contig_folder)
+            
+            
+#         bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
+
+#         if os.path.exists(f"{bam_file_name}.bai"):
+#             print(f"{bam_file_name}.bai, skipping...")
+#             return
+        
+#         if barcode_tag:
+#             all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
+#         else:
+#             all_contents_for_suffix = all_contents_df.filter(pl.col('bucket') == suffix)
+            
+
+#         if verbose:
+#             if len(all_contents_for_suffix) > 0:
+#                 print("\tcontig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+#                         contig,
+#                         suffix,
+#                         len(all_contents_df),
+#                         len(all_contents_for_suffix)
+#                         ))
+        
+#         try:
+#             reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
+#                 pl.concat_str(
+#                     [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
+#                     separator="\n"
+#                      ).alias("combined_text")
+#             )[['combined_text']][1].item().split('\n')))
+#         except Exception as e:
+#             reads_count_for_suffix = len(all_contents_for_suffix)
+            
+#             if reads_count_for_suffix == 0:
+#                 #print("\tWARNING: No reads found in region {}:{}... assuming this is not an issue, but perhaps worth confirming manually using samtools.".format(contig, suffix))
+#                 reads_deduped = []
+#             else:
+#                 print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+#                     e,
+#                     contig,
+#                     suffix,
+#                     len(all_contents_df),
+#                     reads_count_for_suffix
+#                     ))
+#                 sys.exit(1)
+        
+#         # Write, sort and index bam immediately
+#         write_reads_to_file(reads_deduped, bam_file_name, header_string) 
+#         try:
+#             # print("\tSorting {}...".format(bam_file_name))
+#             sorted_bam_file_name = sort_bam(bam_file_name)
+#             # print("\tIndexing {}...".format(sorted_bam_file_name))
+#             index_bam(sorted_bam_file_name)
+#             rm_bam(bam_file_name)
+#         except Exception as e:
+#             print("Failed at indexing {}".format(bam_file_name))
+#             raise e
+            
+            
 def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, barcode_tag='CB', number_of_expected_bams=4, verbose=False):
     job_params = []
     
@@ -789,7 +883,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
 
     if verbose:
         print("\t{}: num subcontigs to concat: {}".format(contig, len(sorted_subcontig_dfs)))
-        # All of the reads for all of the barcodes are in this dataframe
         print("\t{}: concatting".format(contig))
         
     all_contents_df = pl.concat(sorted_subcontig_dfs)
@@ -797,7 +890,7 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
     # Combine the reads (in string representation) for all rows corresponding to a barcode  
     assert(barcode_tag in ['CB', 'IS', 'IB'])
     
-    suffix_options = suffixes.get(barcode_tag)
+    suffix_options = suffixes.get(barcode_tag, [])
     print("\t{} suffixes".format(len(suffix_options)))
     
     for suffix in suffix_options:
@@ -805,7 +898,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
         contig_folder = '{}/{}_{}/'.format(split_bams_folder, contig, suffix)
         if not os.path.exists(contig_folder):
             os.mkdir(contig_folder)
-            
             
         bam_file_name = '{}/{}_{}.bam'.format(contig_folder, contig, suffix)
 
@@ -817,7 +909,6 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
             all_contents_for_suffix = all_contents_df.filter(pl.col('barcode').str.ends_with(suffix))
         else:
             all_contents_for_suffix = all_contents_df.filter(pl.col('bucket') == suffix)
-            
 
         if verbose:
             if len(all_contents_for_suffix) > 0:
@@ -829,39 +920,71 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
                         ))
         
         try:
-            reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
-                pl.concat_str(
-                    [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
-                    separator="\n"
-                     ).alias("combined_text")
-            )[['combined_text']][1].item().split('\n')))
+            reads_deduped = []
+            seen_reads = set()
+            
+            if 'contents_compressed' in all_contents_for_suffix.columns:
+                for row in all_contents_for_suffix.iter_rows(named=True):
+                    compressed_data = row['contents_compressed']
+                    
+                    # Decompress the data
+                    try:
+                        decompressed_data = gzip.decompress(compressed_data).decode('utf-8')
+                        reads = decompressed_data.split('\n')
+                        
+                        for read in reads:
+                            if read and read not in seen_reads:
+                                reads_deduped.append(read)
+                                seen_reads.add(read)
+                    except Exception as decomp_error:
+                        if verbose:
+                            print(f"Error decompressing data for barcode {row.get('barcode', 'unknown')}: {decomp_error}")
+                        continue
+            
+            elif 'contents' in all_contents_for_suffix.columns:
+                reads_deduped = list(OrderedDict.fromkeys(all_contents_for_suffix.transpose().with_columns(
+                    pl.concat_str(
+                        [pl.col(c) for c in all_contents_for_suffix.transpose().columns],
+                        separator="\n"
+                         ).alias("combined_text")
+                )[['combined_text']][1].item().split('\n')))
+            
+            else:
+                if verbose:
+                    print(f"Warning: No recognized content column found for {contig}_{suffix}")
+                reads_deduped = []
+                
         except Exception as e:
             reads_count_for_suffix = len(all_contents_for_suffix)
             
             if reads_count_for_suffix == 0:
-                #print("\tWARNING: No reads found in region {}:{}... assuming this is not an issue, but perhaps worth confirming manually using samtools.".format(contig, suffix))
                 reads_deduped = []
             else:
-                print("\t\t### ERROR EMPTY?: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
+                print("\t\t### ERROR: {}, contig: {} suffix: {}, all_contents_df length: {}, all_contents_for_suffix length: {}".format(
                     e,
                     contig,
                     suffix,
                     len(all_contents_df),
                     reads_count_for_suffix
                     ))
-                sys.exit(1)
+                reads_deduped = []
         
         # Write, sort and index bam immediately
-        write_reads_to_file(reads_deduped, bam_file_name, header_string) 
-        try:
-            # print("\tSorting {}...".format(bam_file_name))
-            sorted_bam_file_name = sort_bam(bam_file_name)
-            # print("\tIndexing {}...".format(sorted_bam_file_name))
-            index_bam(sorted_bam_file_name)
-            rm_bam(bam_file_name)
-        except Exception as e:
-            print("Failed at indexing {}".format(bam_file_name))
-            raise e
+        if reads_deduped:
+            write_reads_to_file(reads_deduped, bam_file_name, header_string) 
+            try:
+                sorted_bam_file_name = sort_bam(bam_file_name)
+                index_bam(sorted_bam_file_name)
+                rm_bam(bam_file_name)
+            except Exception as e:
+                print("Failed at indexing {}".format(bam_file_name))
+                raise e
+        
+        if verbose and reads_deduped:
+            print(f"\tWrote {len(reads_deduped)} reads for {contig}_{suffix}")
+            
+            
+            
             
     
 def concat_and_write_bams_wrapper(params):

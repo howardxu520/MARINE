@@ -13,6 +13,7 @@ from tqdm import tqdm
 from multiprocessing import get_context
 import shutil
 import random
+import gzip
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_information_wrapper,\
@@ -247,9 +248,76 @@ def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", 
     return interval_metadata_list, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
 
 
-# Read read files from disk
-def process_reads_from_disk_for_bam_creation(interval_metadata_list, output_folder, barcode_tag, verbose=False):
+# # Read read files from disk
+# def process_reads_from_disk_for_bam_creation(interval_metadata_list, output_folder, barcode_tag, verbose=False):
 
+#     overall_label_to_list_of_contents = defaultdict(lambda: {})
+#     contig_intervals = defaultdict(list)
+#     for metadata in interval_metadata_list:
+#         if metadata:
+#             contig_intervals[metadata['contig']].append(metadata)
+    
+#     for contig, intervals in contig_intervals.items():
+#         if verbose:
+#             print(f"Processing {len(intervals)} intervals for contig {contig}")
+        
+#         all_chunk_files = []
+#         for interval in intervals:
+#             if 'chunk_files' in interval:
+#                 all_chunk_files.extend(interval['chunk_files'])
+        
+#         if verbose:
+#             print(f"Found {len(all_chunk_files)} chunk files for {contig}")
+        
+#         suffix_options = suffixes.get(barcode_tag, [])
+        
+#         for suffix in suffix_options:
+#             reads_for_suffix = defaultdict(list)
+
+#             for chunk_file in all_chunk_files:
+#                 try:
+#                     with open(chunk_file, 'r') as f:
+#                         for line in f:
+#                             line = line.strip()
+#                             if line:
+#                                 parts = line.split('\t', 1)
+#                                 if len(parts) == 2:
+#                                     barcode, read_string = parts
+
+#                                     if barcode.endswith(suffix):
+#                                         reads_for_suffix[barcode].append(read_string)
+                
+#                 except Exception as e:
+#                     if verbose:
+#                         print(f"Error reading chunk file {chunk_file}: {e}")
+#                     continue
+            
+#             if reads_for_suffix:
+#                 df_data = []
+#                 for barcode, reads in reads_for_suffix.items():
+#                     df_data.append({
+#                         'barcode': barcode,
+#                         'contents': '\n'.join(reads),
+#                         'bucket': suffix_options.index(suffix) if suffix in suffix_options else 0
+#                     })
+                
+#                 if df_data:
+#                     df = pl.DataFrame(df_data)
+#                     label = f"{contig}_{suffix}"
+#                     overall_label_to_list_of_contents[contig][label] = df
+                    
+#                     if verbose:
+#                         print(f"Created DataFrame for {contig}_{suffix} with {len(df)} barcodes, total reads: {sum(len(reads) for reads in reads_for_suffix.values())}")
+                    
+#                     del reads_for_suffix
+#                     del df_data
+    
+#     return overall_label_to_list_of_contents
+
+
+
+
+def process_reads_from_disk_for_bam_creation(interval_metadata_list, output_folder, barcode_tag, verbose=False):
     overall_label_to_list_of_contents = defaultdict(lambda: {})
     contig_intervals = defaultdict(list)
     for metadata in interval_metadata_list:
@@ -294,9 +362,13 @@ def process_reads_from_disk_for_bam_creation(interval_metadata_list, output_fold
             if reads_for_suffix:
                 df_data = []
                 for barcode, reads in reads_for_suffix.items():
+                    joined_reads = '\n'.join(reads)
+                    compressed_reads = gzip.compress(joined_reads.encode('utf-8'))
+                    
                     df_data.append({
                         'barcode': barcode,
-                        'contents': '\n'.join(reads),
+                        'contents_compressed': compressed_reads,
+                        'read_count': len(reads), 
                         'bucket': suffix_options.index(suffix) if suffix in suffix_options else 0
                     })
                 
@@ -306,13 +378,17 @@ def process_reads_from_disk_for_bam_creation(interval_metadata_list, output_fold
                     overall_label_to_list_of_contents[contig][label] = df
                     
                     if verbose:
-                        print(f"Created DataFrame for {contig}_{suffix} with {len(df)} barcodes, total reads: {sum(len(reads) for reads in reads_for_suffix.values())}")
+                        total_reads = sum(row['read_count'] for row in df_data)
+                        original_size = sum(len('\n'.join(reads).encode('utf-8')) for reads in reads_for_suffix.values())
+                        compressed_size = sum(len(row['contents_compressed']) for row in df_data)
+                        compression_ratio = compressed_size / original_size if original_size > 0 else 0
+                        print(f"Created DataFrame for {contig}_{suffix} with {len(df)} barcodes, "
+                              f"total reads: {total_reads}, compression: {compression_ratio:.2%}")
                     
                     del reads_for_suffix
                     del df_data
     
     return overall_label_to_list_of_contents
-
 
 
 def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of_contents, contigs_to_generate_bams_for, barcode_tag='CB', cores=1, number_of_expected_bams=4, verbose=False):
