@@ -11,6 +11,8 @@ from collections import defaultdict
 import multiprocessing
 from tqdm import tqdm
 from multiprocessing import get_context
+import shutil
+import random
 
 from read_process import incorporate_replaced_pos_info,incorporate_insertions_and_deletions,\
 get_positions_from_md_tag,reverse_complement,get_edit_information,get_edit_information_wrapper,\
@@ -94,45 +96,78 @@ def generate_depths(output_folder, bam_filepaths, original_bam_filepath, paired_
     return coverage_total_time, total_seconds_for_contig_df
 
 
-def bam_processing(bam_filepath, overall_label_to_list_of_contents, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4,
-                   verbose=False):
-    # Only used for single-cell and/or long read reconfiguration of bams to optimize coverage calculation
+# We will write the reads that contain edits to bam
+def bam_processing(bam_filepath, interval_metadata_list, output_folder, barcode_tag='CB', cores=1, number_of_expected_bams=4, verbose=False):
     split_bams_folder = '{}/split_bams'.format(output_folder)
     make_folder(split_bams_folder)
-    contigs_to_generate_bams_for = get_contigs_that_need_bams_written(list(overall_label_to_list_of_contents.keys()),
-                                                                      split_bams_folder, 
-                                                                      barcode_tag=barcode_tag,
-                                                                    number_of_expected_bams=number_of_expected_bams
-                                                                     )
+
+    contigs_from_metadata = list(set([m['contig'] for m in interval_metadata_list if m]))
+    contigs_to_generate_bams_for = get_contigs_that_need_bams_written(
+        contigs_from_metadata,
+        split_bams_folder, 
+        barcode_tag=barcode_tag,
+        number_of_expected_bams=number_of_expected_bams
+    )
+    
     if verbose:
         pretty_print("Will split and reconfigure the following contigs: {}".format(",".join(contigs_to_generate_bams_for)))
     
-    
-    # BAM Generation
-    total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(
-        split_bams_folder, 
-        bam_filepath, 
-        overall_label_to_list_of_contents, 
-        contigs_to_generate_bams_for, 
-        barcode_tag=barcode_tag, 
-        cores=cores,
-        number_of_expected_bams=number_of_expected_bams,
-        verbose=verbose)
-    
+    if len(contigs_to_generate_bams_for) > 0:
+        print("Processing reads from disk files for BAM generation...")
+        overall_label_to_list_of_contents = process_reads_from_disk_for_bam_creation(
+            interval_metadata_list, output_folder, barcode_tag, verbose
+        )
+        
+        filtered_contents = {k: v for k, v in overall_label_to_list_of_contents.items() 
+                           if k in contigs_to_generate_bams_for}
+        
+        if filtered_contents:
+            total_bam_generation_time, total_seconds_for_bams = run_bam_reconfiguration(
+                split_bams_folder, 
+                bam_filepath, 
+                filtered_contents, 
+                contigs_to_generate_bams_for, 
+                barcode_tag=barcode_tag, 
+                cores=cores,
+                number_of_expected_bams=number_of_expected_bams,
+                verbose=verbose)
+        else:
+            total_bam_generation_time = 0
+            total_seconds_for_bams = {}
+        
+        del overall_label_to_list_of_contents
+        
+    else:
+        total_bam_generation_time = 0
+        total_seconds_for_bams = {}
+        
     total_seconds_for_bams_df = pd.DataFrame.from_dict(total_seconds_for_bams, orient='index')
     total_seconds_for_bams_df.columns = ['seconds']
     total_seconds_for_bams_df['contigs'] = total_seconds_for_bams_df.index
     total_seconds_for_bams_df.index = range(len(total_seconds_for_bams_df))
     
     return total_bam_generation_time, total_seconds_for_bams_df
-    
 
+
+# Cleanup for intermediate reads
+def cleanup_intermediate_reads(output_folder, verbose=False):
+    reads_subfolder = f"{output_folder}/intermediate_reads"
+    if os.path.exists(reads_subfolder):
+        if verbose:
+            print(f"Cleaning up intermediate read files in {reads_subfolder}")
+        try:
+            shutil.rmtree(reads_subfolder)
+        except Exception as e:
+            if verbose:
+                print(f"Error cleaning up {reads_subfolder}: {e}")
+    
+# We will call run_edit_identifier to find edits on the contig
 def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[],
                 verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
     
     pretty_print("Each contig is being split into subsets of length...".format(interval_length))
     
-    overall_label_to_list_of_contents, results, overall_time, overall_total_reads, \
+    interval_metadata_list, results, overall_time, overall_total_reads, \
     total_seconds_for_reads, counts_summary_df = run_edit_identifier(
         bam_filepath, 
         output_folder, 
@@ -148,9 +183,6 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
         interval_length=interval_length
     )
     
-    #print(overall_label_to_list_of_contents.keys())
-    #print(overall_label_to_list_of_contents.get(list(overall_label_to_list_of_contents.keys())[0]))
-    
     pretty_print(
         [
             "Reads processed:\t{}".format(overall_total_reads), 
@@ -160,72 +192,125 @@ def edit_finder(bam_filepath, output_folder, strandedness, barcode_tag="CB", bar
         style="-"
     )
     
-    
     total_seconds_for_reads_df = pd.DataFrame.from_dict(total_seconds_for_reads, orient='index')
     total_seconds_for_reads_df.columns = ['seconds']
     total_seconds_for_reads_df['reads'] = total_seconds_for_reads_df.index
     total_seconds_for_reads_df.index = range(len(total_seconds_for_reads_df))
     
+    return interval_metadata_list, results, total_seconds_for_reads_df, overall_total_reads, counts_summary_df
+
     
-    return overall_label_to_list_of_contents, results, total_seconds_for_reads_df, overall_total_reads, counts_summary_df
-    
+# We will split up contig according to interval length, and on each split interval, we will call find_edits_and_split_bams_wrapper identify edits separately, we will merge them after all edits are finished processing.
 def run_edit_identifier(bampath, output_folder, strandedness, barcode_tag="CB", barcode_whitelist=None, contigs=[], verbose=False, cores=64, min_read_quality=0, min_base_quality=0, dist_from_end=0, interval_length=2000000):
 
-    # Make subfolder in which to information about edits
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
     make_folder(edit_info_subfolder)
     
     edit_finding_jobs = make_edit_finding_jobs(bampath, output_folder, strandedness, barcode_tag, barcode_whitelist, contigs, verbose, min_read_quality, min_base_quality, dist_from_end, interval_length=interval_length)
     pretty_print("{} total jobs".format(len(edit_finding_jobs)))
     
-    # Performance statistics
+
     overall_total_reads = 0
     total_seconds_for_reads = {0: 1}
-    
-    # Result containers
-    overall_label_to_list_of_contents = defaultdict(lambda:{})
+    interval_metadata_list = []
     results = []
     
     start_time = time.perf_counter()
-
-    all_counts_summary_dfs = []
-    overall_count_summary_dict = defaultdict(lambda:0)
-    #multiprocessing.set_start_method('spawn')
+    overall_counts_summary = defaultdict(lambda: 0)
+    
     with get_context("spawn").Pool(processes=cores, maxtasksperchild=4) as p:
         max_ = len(edit_finding_jobs)
         with tqdm(total=max_) as pbar:
-            for _ in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
-                # values returned within array _ are:
-                # ~~~~  contig, label, barcode_to_concatted_reads_pl, total_reads, counts_df, time_df, total_time
-                # So the line overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
-                # is equivalent to overall_label_to_list_of_contents[contig][label] = barcode_to_concatted_reads_pl
+            for result in p.imap_unordered(find_edits_and_split_bams_wrapper, edit_finding_jobs):
                 pbar.update()
 
-                if barcode_tag: 
-                    # Only keep this information for single cell requirements
-                    overall_label_to_list_of_contents[_[0]][_[1]] =  _[2]
-                total_reads = _[3]
-                counts_summary_df = _[4]
-                all_counts_summary_dfs.append(counts_summary_df)
-
-                total_time = time.perf_counter() - start_time
-
+                contig, label, interval_metadata, total_reads, counts_summary_df, time_df, total_time = result
+                
+                if interval_metadata and barcode_tag:
+                    interval_metadata_list.append(interval_metadata)
+                if not counts_summary_df.empty:
+                    for contig_key in counts_summary_df.columns:
+                        for count_type in counts_summary_df.index:
+                            overall_counts_summary[count_type] += counts_summary_df.loc[count_type, contig_key]
+                
                 overall_total_reads += total_reads
-
-                total_seconds_for_reads[overall_total_reads] = total_time
+                total_seconds_for_reads[overall_total_reads] = time.perf_counter() - start_time
+                
+                import gc
+                gc.collect()
 
     overall_time = time.perf_counter() - start_time 
     
-    if len(all_counts_summary_dfs) == 0:
-        return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, pd.DataFrame()
+    overall_count_summary_df = pd.Series(overall_counts_summary)
 
-    all_counts_summary_dfs_combined = pd.concat(all_counts_summary_dfs, axis=1)
-    #print(all_counts_summary_dfs_combined.index, all_counts_summary_dfs_combined.columns)
+    return interval_metadata_list, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
+
+
+# Read read files from disk
+def process_reads_from_disk_for_bam_creation(interval_metadata_list, output_folder, barcode_tag, verbose=False):
+
+    overall_label_to_list_of_contents = defaultdict(lambda: {})
+    contig_intervals = defaultdict(list)
+    for metadata in interval_metadata_list:
+        if metadata:
+            contig_intervals[metadata['contig']].append(metadata)
     
-    overall_count_summary_df = pd.DataFrame.from_dict(all_counts_summary_dfs_combined).sum(axis=1)
-    #print(overall_count_summary_df)
+    for contig, intervals in contig_intervals.items():
+        if verbose:
+            print(f"Processing {len(intervals)} intervals for contig {contig}")
+        
+        all_chunk_files = []
+        for interval in intervals:
+            if 'chunk_files' in interval:
+                all_chunk_files.extend(interval['chunk_files'])
+        
+        if verbose:
+            print(f"Found {len(all_chunk_files)} chunk files for {contig}")
+        
+        suffix_options = suffixes.get(barcode_tag, [])
+        
+        for suffix in suffix_options:
+            reads_for_suffix = defaultdict(list)
 
-    return overall_label_to_list_of_contents, results, overall_time, overall_total_reads, total_seconds_for_reads, overall_count_summary_df
+            for chunk_file in all_chunk_files:
+                try:
+                    with open(chunk_file, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                parts = line.split('\t', 1)
+                                if len(parts) == 2:
+                                    barcode, read_string = parts
+
+                                    if barcode.endswith(suffix):
+                                        reads_for_suffix[barcode].append(read_string)
+                
+                except Exception as e:
+                    if verbose:
+                        print(f"Error reading chunk file {chunk_file}: {e}")
+                    continue
+            
+            if reads_for_suffix:
+                df_data = []
+                for barcode, reads in reads_for_suffix.items():
+                    df_data.append({
+                        'barcode': barcode,
+                        'contents': '\n'.join(reads),
+                        'bucket': suffix_options.index(suffix) if suffix in suffix_options else 0
+                    })
+                
+                if df_data:
+                    df = pl.DataFrame(df_data)
+                    label = f"{contig}_{suffix}"
+                    overall_label_to_list_of_contents[contig][label] = df
+                    
+                    if verbose:
+                        print(f"Created DataFrame for {contig}_{suffix} with {len(df)} barcodes, total reads: {sum(len(reads) for reads in reads_for_suffix.values())}")
+                    
+                    del reads_for_suffix
+                    del df_data
+    
+    return overall_label_to_list_of_contents
 
 
 
@@ -233,10 +318,8 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
     start_time = time.perf_counter()
 
     with pysam.AlignmentFile(bampath, "rb") as samfile:
-        # Get the bam header, which will be used for each of the split bams too
         header_string = str(samfile.header)
 
-    # num_processes = np.max([len(contigs_to_generate_bams_for), 32])
     num_processes = cores
     
     total_seconds_for_bams = {0: 1}
@@ -256,6 +339,7 @@ def run_bam_reconfiguration(split_bams_folder, bampath, overall_label_to_list_of
     return total_bam_generation_time, total_seconds_for_bams
 
 
+# This is the main function for edit finding that will be called in the marine.py
 def run_edit_finding(barcode_tag,
                      barcode_whitelist_file, 
                      contigs, 
@@ -279,24 +363,22 @@ def run_edit_finding(barcode_tag,
         barcode_whitelist = None
 
     if len(contigs) == 0:
-        # Take care of the case where no contigs are specified, so that all contigs available are processed
         broken_up_contigs = [[]]
     else:
         if barcode_tag:
-            # For single cell sequencing we will only process this many contigs at a time
             broken_up_contigs = get_broken_up_contigs(contigs, num_per_sublist)
-                
         else:
-            # For bulk sequencing we will just process all contigs 
             broken_up_contigs = [contigs]
 
     print('Contig groups to be processed:', broken_up_contigs)
     
     overall_counts_summary_df = defaultdict(lambda:0)
     overall_total_reads_processed = 0
+    all_interval_metadata = []
+    
     for subcontig_list in broken_up_contigs:
             
-        overall_label_to_list_of_contents, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
+        interval_metadata_list, results, total_seconds_for_reads_df, total_reads_processed, counts_summary_df = edit_finder(
             bam_filepath, 
             output_folder, 
             strandedness,
@@ -311,28 +393,29 @@ def run_edit_finding(barcode_tag,
             interval_length=interval_length
         )
 
+        all_interval_metadata.extend(interval_metadata_list)
+        
         for k,v in counts_summary_df.items():
             overall_counts_summary_df[k] += v
             
         overall_total_reads_processed += total_reads_processed
         
-        #total_seconds_for_reads_df.to_csv("{}/edit_finder_timing.tsv".format(logging_folder), sep='\t')
-        
         if barcode_tag:
-            # Make a subfolder into which the split bams will be placed
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            pretty_print("Contigs processed\n\n\t{}".format(sorted(list(overall_label_to_list_of_contents.keys()))))
             pretty_print("Splitting and reconfiguring BAMs to optimize coverage calculations", style="~")
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
             
-            total_bam_generation_time, total_seconds_for_bams_df = bam_processing(bam_filepath, overall_label_to_list_of_contents, output_folder, barcode_tag=barcode_tag, cores=cores, number_of_expected_bams=number_of_expected_bams, verbose=verbose)
-            #total_seconds_for_bams_df.to_csv("{}/bam_reconfiguration_timing.tsv".format(logging_folder), sep='\t')
+            total_bam_generation_time, total_seconds_for_bams_df = bam_processing(
+                bam_filepath, 
+                all_interval_metadata,
+                output_folder, 
+                barcode_tag=barcode_tag, 
+                cores=cores, 
+                number_of_expected_bams=number_of_expected_bams, 
+                verbose=verbose
+            )
+            
             pretty_print("Total time to concat and write bams: {} minutes".format(round(total_bam_generation_time/60, 3)))
 
-        print("Deleting overall_label_to_list_of_contents...")
-        del overall_label_to_list_of_contents
-
+    cleanup_intermediate_reads(output_folder, verbose)
     
     with open('{}/manifest.txt'.format(logging_folder), 'a+') as f:
         f.write(f'total_reads_processed\t{overall_total_reads_processed}\n') 
@@ -347,6 +430,7 @@ def run_edit_finding(barcode_tag,
         f.write(f'edits per read (EPR)\t{raw_epr}\n')
 
 
+# Add contig barcode info into read
 def incorporate_barcode(read_as_string, contig, barcode):
     read_tab_separated = read_as_string.split('\t')
     contig_section = '{}_{}'.format(contig, barcode)
@@ -355,21 +439,23 @@ def incorporate_barcode(read_as_string, contig, barcode):
     return read_as_string
 
 
+# Write reads that have edits to bam file
 def write_bam_file(reads, bam_file_name, header_string):   
-    # Write, sort and index bam immediately
     write_reads_to_file(reads, bam_file_name, header_string)
     try:
-        # print("\tSorting {}...".format(bam_file_name))
         sorted_bam_file_name = sort_bam(bam_file_name)
-        # print("\tIndexing {}...".format(sorted_bam_file_name))
         index_bam(sorted_bam_file_name)
         rm_bam(bam_file_name)
     except Exception as e:
         print("Failed at indexing {}, {}".format(bam_file_name, e))
-        
-
+    
+    
+# Look for edits and save the reads that have edits to intermediate reads files.
 def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_tag="CB", strandedness=0, barcode_whitelist=None, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):  
     edit_info_subfolder = '{}/edit_info'.format(output_folder)
+    
+    reads_subfolder = '{}/intermediate_reads'.format(output_folder)
+    make_folder(reads_subfolder)
         
     time_reporting = {}
     start_time = time.perf_counter()
@@ -382,14 +468,34 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
     
     total_reads = 0
     
-    bam_handles_for_barcodes = {}
-    read_lists_for_barcodes = defaultdict(lambda:[])
+    MAX_READS_PER_FILE = 5000000
+    current_chunk = 0
+    current_chunk_reads = 0
+    current_chunk_file = None
+    reads_written_per_barcode = defaultdict(int)
+    chunk_files_created = []
+    
+    def get_next_chunk_file():
+        nonlocal current_chunk, current_chunk_reads, current_chunk_file
+        
+        if current_chunk_file:
+            current_chunk_file.close()
+        
+        chunk_filename = f"{reads_subfolder}/{contig}_{split_index}_chunk_{current_chunk:04d}.reads"
+        current_chunk_file = open(chunk_filename, 'w')
+        chunk_files_created.append(chunk_filename)
+        current_chunk_reads = 0
+        current_chunk += 1
+        
+        if verbose:
+            print(f"Created new chunk file: {chunk_filename}")
+        
+        return current_chunk_file
     
     reads_for_contig = samfile.fetch(contig, start, end, multiple_iterators=True)
         
     output_file = '{}/{}_{}_{}_{}_edit_info.tsv'.format(edit_info_subfolder, contig, split_index, start, end)
-    output_bedfile = '{}/{}_{}_{}_{}_edit_positions.bed'.format(edit_info_subfolder, contig, split_index, start, end)
-
+    
     remove_file_if_exists(output_file)
     
     with open(output_file, 'w') as f:        
@@ -420,8 +526,7 @@ def find_edits(bampath, contig, split_index, start, end, output_folder, barcode_
                     continue
             
             try:
-                error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, strandedness=strandedness, barcode_tag=barcode_tag, verbose=verbose, min_read_quality=min_read_quality, min_base_quality=min_base_quality, 
-dist_from_end=dist_from_end)
+                error_code, list_of_rows, num_edits_of_each_type = get_read_information(read, contig, strandedness=strandedness, barcode_tag=barcode_tag, verbose=verbose, min_read_quality=min_read_quality, min_base_quality=min_base_quality, dist_from_end=dist_from_end)
             except Exception as e:
                 print("Failed getting read info on\n{}, {}".format(read.to_string(), e))
                 break
@@ -433,121 +538,73 @@ dist_from_end=dist_from_end)
                 counts[contig]['total_edits'] += len(list_of_rows)
                 write_rows_to_info_file(list_of_rows, f)
             
-            # Store each read using its string representation only if there was not an mapq_low error code while processing the read
-            if error_code != 'mapq_low':
-                read_as_string = read.to_string() 
-                if barcode_tag:
-                    read_as_string = incorporate_barcode(read_as_string, contig, barcode)
+            if (error_code != 'mapq_low') and (barcode_tag):
+                read_to_string = read.to_string() 
+                read_as_string = incorporate_barcode(read_to_string, contig, barcode)
                 
-                read_lists_for_barcodes[barcode].append(read_as_string)
+                if current_chunk_file is None or current_chunk_reads >= MAX_READS_PER_FILE:
+                    get_next_chunk_file()
 
-        
+                current_chunk_file.write(f"{barcode}\t{read_as_string}\n")
+                current_chunk_reads += 1
+                reads_written_per_barcode[barcode] += 1
+                    
+            elif error_code != 'mapq_low':
+                split_bams_subfolder = '{}/split_bams'.format(output_folder)
+                make_folder(split_bams_subfolder)
+                make_folder('{}/{}'.format(split_bams_subfolder, contig))
 
-    barcode_to_concatted_reads = {}
-    if barcode_tag:
-        # Add all reads to dictionary for contig and barcode, in their string representation
-        for barcode, read_list in read_lists_for_barcodes.items():        
-            
-            # Concatenate the string representations of all reads for each bam-contig combination
-            all_reads_concatted = '\n'.join(read_list)
-                
-            # Save this concatenated block of text to dictionary
-            barcode_to_concatted_reads[barcode] = all_reads_concatted
-
-    else: 
-        # For bulk samples, we are just going to directly write the filtered reads to a bam file
-        # containing only the reads in which the edits for this chunk were found, for easy coverage
-        # calculation later.
-        
-        split_bams_subfolder = '{}/split_bams'.format(output_folder)
-        make_folder(split_bams_subfolder)
-        
-        for barcode, read_list in read_lists_for_barcodes.items(): 
-            make_folder('{}/{}'.format(split_bams_subfolder, contig))
-                        
-            bam_file_name = '{}/{}/{}_{}_{}_{}.bam'.format(split_bams_subfolder, contig, contig, split_index, start, end)
-            header_string = str(samfile.header)
-            write_bam_file(read_list, bam_file_name, header_string)
-            
+    if current_chunk_file:
+        current_chunk_file.close()
         
     time_reporting[total_reads] = time.perf_counter() - start_time
-    
     samfile.close()
     
-    return barcode_to_concatted_reads, total_reads, counts, time_reporting
-        
-
-def find_edits_and_split_bams(bampath, contig, split_index, start, end, output_folder, strandedness=0, barcode_tag="CB", barcode_whitelist=None, verbose=False, min_read_quality=0, min_base_quality=0, dist_from_end=0):
-    barcode_to_concatted_reads, total_reads, counts, time_reporting = find_edits(bampath, contig, split_index,
-                                                                         start, end, output_folder, barcode_tag=barcode_tag,
-                                                                                 strandedness=strandedness,
-                                                                                 barcode_whitelist=barcode_whitelist, verbose=verbose,
-                                                                                 min_read_quality=min_read_quality,
-                                                                                 min_base_quality=min_base_quality,
-                                                                                 dist_from_end=dist_from_end
-                                                                                )    
-    return barcode_to_concatted_reads, total_reads, counts, time_reporting
+    if verbose:
+        print(f"Created {len(chunk_files_created)} chunk files for {contig}_{split_index}")
     
+    interval_metadata = {
+        'contig': contig,
+        'split_index': split_index,
+        'start': start,
+        'end': end,
+        'reads_subfolder': reads_subfolder,
+        'chunk_files': chunk_files_created,
+        'total_chunk_files': len(chunk_files_created),
+        'reads_written_per_barcode': dict(reads_written_per_barcode)
+    }
     
+    return interval_metadata, total_reads, counts, time_reporting
     
-import random
 
-
+# This function calls find edits to look for edit through reads
 def find_edits_and_split_bams_wrapper(parameters):
     try:
         start_time = time.perf_counter()
         bampath, contig, split_index, start, end, output_folder, strandedness, barcode_tag, barcode_whitelist, verbose, min_read_quality, min_base_quality, dist_from_end = parameters
         label = '{}({}):{}-{}'.format(contig, split_index, start, end)
         
-        barcode_to_concatted_reads, total_reads, counts, time_reporting = find_edits_and_split_bams(
-            bampath, 
-            contig, 
-            split_index, 
-            start, 
-            end,                                                           
-            output_folder, 
-            strandedness,
-            barcode_tag=barcode_tag,
-            barcode_whitelist=barcode_whitelist,
-            verbose=verbose,
-            min_read_quality=min_read_quality,
-            min_base_quality=min_base_quality,
+        interval_metadata, total_reads, counts, time_reporting = find_edits(
+            bampath, contig, split_index, start, end, output_folder, 
+            barcode_tag=barcode_tag, strandedness=strandedness,
+            barcode_whitelist=barcode_whitelist, verbose=verbose,
+            min_read_quality=min_read_quality, min_base_quality=min_base_quality,
             dist_from_end=dist_from_end
         )
+        
         counts_df = pd.DataFrame.from_dict(counts)
         
         if verbose:
-            #pass
-            print("{}:{}, total reads: {}, counts_df: {}".format(contig, split_index, total_reads, counts_df))
+            print("{}:{}, total reads: {}, reads written to files".format(contig, split_index, total_reads))
         
         time_df = pd.DataFrame.from_dict(time_reporting, orient='index')
-        
-        # Add a random integer column for grouping
-        bucket_label = int(split_index)#%BULK_SPLITS
-        
-        if verbose:
-            pass
-            #print("\t\tsplit_index is {}; Bucket label is {}".format(split_index, bucket_label))
-            #print("Num barcodes/identifiers: {}".format(len(barcode_to_concatted_reads)))
-        
-        if len(barcode_to_concatted_reads) > 0:
-            barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads).transpose(include_header=True, header_name='barcode').rename({"column_0": "contents"})
-            
-            if verbose:
-                print("\tLength after transpose: {}".format(len(barcode_to_concatted_reads_pl)))
-                print("\tHeight after transpose: {}".format(barcode_to_concatted_reads_pl.height))
-            
-            barcode_to_concatted_reads_pl = barcode_to_concatted_reads_pl.with_columns(bucket = pl.lit([bucket_label for _ in range(barcode_to_concatted_reads_pl.height)]))
-            
-        else:
-            # No transposes are allowed on empty dataframes
-            barcode_to_concatted_reads_pl = pl.from_dict(barcode_to_concatted_reads)
-            
         total_time = time.perf_counter() - start_time
-        return contig, label, barcode_to_concatted_reads_pl, total_reads, counts_df, time_df, total_time
+        
+        return contig, label, interval_metadata, total_reads, counts_df, time_df, total_time
+        
     except Exception as e:
         print('Contig {}: {}'.format(label, e))
-        return 0, label, pd.DataFrame(), 0, pd.DataFrame(), pd.DataFrame(), 0
+        return 0, label, None, 0, pd.DataFrame(), pd.DataFrame(), 0
     
     
     
@@ -651,9 +708,6 @@ def gather_edit_information_across_subcontigs(output_folder, barcode_tag='CB', n
     print("Done concatenating!")
         
     return edit_info_grouped_per_contig_combined
-
-
-
 
 
 
