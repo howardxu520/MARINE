@@ -286,7 +286,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
         keep_intermediate_files=False,
         num_per_sublist=6,
         skip_coverage=False, interval_length=2000000,
-        all_cells_coverage=False, tabulation_bed=None
+        all_cells_coverage=False, tabulation_bed=None,
+        compress_data=False
        ):
         
     logging_folder = "{}/metadata".format(output_folder)
@@ -339,7 +340,8 @@ def run(bam_filepath, annotation_bedfile_path, output_folder, contigs=[], strand
                 number_of_expected_bams,
                 cores,
                 logging_folder,
-                verbose
+                verbose=verbose,
+                compress_data=compress_data
             )
             
     reconfigured_bam_filepaths = glob('{}/split_bams/*/*.bam'.format(output_folder))
@@ -538,6 +540,10 @@ if __name__ == '__main__':
     parser.add_argument('--max_edits_per_read', type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument('--num_intervals_per_contig', type=int, default=200, help=argparse.SUPPRESS) # deprecated
     parser.add_argument('--interval_length', type=int, default=32000000, help='Length of intervals to split analysis into... you probably don\'t have to change this.')
+    parser.add_argument('--compress_data', action='store_true', 
+                        help="Enable compression of read data to reduce memory usage. "
+                             "Works best when combined with --large_library. Only applies when barcode_tag is specified. Longer runtime")
+
     
     args = parser.parse_args()
     bam_filepath = args.bam_filepath
@@ -571,6 +577,8 @@ if __name__ == '__main__':
     num_intervals_per_contig = args.num_intervals_per_contig
     interval_length = args.interval_length
     num_per_sublist = args.num_per_sublist
+    
+    compress_data = args.compress_data
 
     print_marine_logo()
     check_folder_is_empty_warn_if_not(output_folder)
@@ -580,6 +588,11 @@ if __name__ == '__main__':
         if all_cells_coverage == True:
             print("WARNING: --all_cells_coverage flag only applies for single cell case, ignoring...")
             all_cells_coverage = False
+            
+    if  compress_data and not barcode_tag:
+        print("Warning: --compress_data only apply to single-cell data (when --barcode_tag is specified)")
+        print("These flags will be ignored for bulk analysis.")
+        compress_data = False
 
     print_all_cells_coverage_warning(all_cells_coverage, tabulation_bed)
 
@@ -676,7 +689,8 @@ if __name__ == '__main__':
         num_per_sublist=num_per_sublist,
         interval_length=interval_length,
         all_cells_coverage=all_cells_coverage,
-        tabulation_bed=tabulation_bed
+        tabulation_bed=tabulation_bed,
+        compress_data=compress_data
        )
     
     

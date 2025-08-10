@@ -920,13 +920,11 @@ def concat_and_write_bams(contig, df_dict, header_string, split_bams_folder, bar
                         ))
         
         try:
-            reads_deduped = []
-            seen_reads = set()
-            
             if 'contents_compressed' in all_contents_for_suffix.columns:
+                reads_deduped = []
+                seen_reads = set()
                 for row in all_contents_for_suffix.iter_rows(named=True):
                     compressed_data = row['contents_compressed']
-                    
                     # Decompress the data
                     try:
                         decompressed_data = gzip.decompress(compressed_data).decode('utf-8')
